@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+
+import { prisma } from "@/src/lib/server/prisma";
+import { requireWorkspaceAccess } from "@/src/lib/server/request-context";
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ linkId: string }> },
+) {
+  const access = await requireWorkspaceAccess();
+  if (!access.ok) return access.response;
+
+  if (access.permissions.isReadOnly || !access.permissions.canEditProjects) {
+    return NextResponse.json({ error: "Keine Berechtigung." }, { status: 403 });
+  }
+
+  const { linkId } = await context.params;
+  const link = await prisma.guestProjectSubmissionLink.findFirst({
+    where: {
+      id: linkId,
+      workspaceId: access.membership.workspaceId,
+    },
+  });
+
+  if (!link) {
+    return NextResponse.json({ error: "Gast-Erstellungslink nicht gefunden." }, { status: 404 });
+  }
+
+  await prisma.guestProjectSubmissionLink.update({
+    where: { id: link.id },
+    data: { revokedAt: new Date() },
+  });
+
+  return NextResponse.json({ ok: true });
+}

@@ -1,0 +1,9 @@
+<CommunityApplications>
+  <Profile>
+    makershelf is a 3D print file and project manager for makers, workshops and teams. Organise your models, track print runs, manage creators and categories. Server Edition runs on Unraid with PostgreSQL, team login, roles and invitations. Support: https://github.com/NilsN3DP/makershelf/issues
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/public/makershelf-logo.svg</Icon>
+  <WebPage>https://github.com/NilsN3DP/makershelf</WebPage>
+  <DonateLink>https://buymeacoffee.com/n3dp</DonateLink>
+  <DonateText>Support makershelf</DonateText>
+</CommunityApplications>

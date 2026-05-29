@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">makershelf Logo</title>
+  <desc id="desc">Minimal icon with an orange rounded square, layered print sheets and a vault-like frame.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg)"/>
+  <rect x="30" y="28" width="68" height="72" rx="16" fill="#0f172a" opacity="0.96"/>
+  <rect x="40" y="40" width="48" height="10" rx="5" fill="#ffffff" opacity="0.96"/>
+  <rect x="40" y="58" width="48" height="10" rx="5" fill="#fdba74"/>
+  <rect x="40" y="76" width="32" height="10" rx="5" fill="#ffffff" opacity="0.72"/>
+  <path d="M92 34v60" stroke="#fdba74" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="92" cy="64" r="6" fill="#fdba74"/>
+</svg>

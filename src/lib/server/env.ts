@@ -1,0 +1,66 @@
+import { z } from "zod";
+
+const serverEnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  DATABASE_URL: z.string().min(1).default("file:./dev.db"),
+  DATABASE_PROVIDER: z.enum(["sqlite", "postgresql"]).default("sqlite"),
+  MAKERSHELF_APP_NAME: z.string().default("makershelf"),
+  MAKERSHELF_DATA_BACKEND: z.enum(["browser", "sqlite", "postgres"]).default("postgres"),
+  MAKERSHELF_STORAGE_DRIVER: z.enum(["indexeddb", "filesystem", "s3-compatible"]).default("filesystem"),
+  MAKERSHELF_STORAGE_ROOT: z.string().optional(),
+  MAKERSHELF_IMPORT_ROOT: z.string().optional(),
+  MAKERSHELF_PRUSASLICER_IMPORT_ROOT: z.string().optional(),
+  MAKERSHELF_DEMO_MODE: z.string().optional(),
+  MAKERSHELF_AUTH_SECRET: z.string().min(24).optional(),
+  MAKERSHELF_BOOTSTRAP_EMAIL: z.string().email().optional(),
+  MAKERSHELF_BOOTSTRAP_PASSWORD: z.string().min(8).optional(),
+  // LDAP / Active Directory
+  MAKERSHELF_LDAP_ENABLED: z.string().optional(),
+  MAKERSHELF_LDAP_URL: z.string().optional(),
+  MAKERSHELF_LDAP_BIND_DN: z.string().optional(),
+  MAKERSHELF_LDAP_BIND_PASSWORD: z.string().optional(),
+  MAKERSHELF_LDAP_SEARCH_BASE: z.string().optional(),
+  MAKERSHELF_LDAP_SEARCH_FILTER: z.string().optional(),
+  MAKERSHELF_LDAP_ATTR_EMAIL: z.string().optional(),
+  MAKERSHELF_LDAP_ATTR_NAME: z.string().optional(),
+  MAKERSHELF_LDAP_GROUP_SEARCH_BASE: z.string().optional(),
+  MAKERSHELF_LDAP_GROUP_ATTR_MEMBER: z.string().optional(),
+  MAKERSHELF_LDAP_GROUP_MAP_ADMIN: z.string().optional(),
+  MAKERSHELF_LDAP_GROUP_MAP_EDITOR: z.string().optional(),
+  MAKERSHELF_LDAP_GROUP_MAP_UPLOADER: z.string().optional(),
+  MAKERSHELF_LDAP_DEFAULT_ROLE: z.enum(["ADMIN", "EDITOR", "UPLOADER", "READER"]).optional(),
+});
+
+export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+export function getServerEnv(): ServerEnv {
+  return serverEnvSchema.parse({
+    NODE_ENV: process.env.NODE_ENV,
+    DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_PROVIDER: process.env.DATABASE_PROVIDER,
+    MAKERSHELF_APP_NAME: process.env.MAKERSHELF_APP_NAME,
+    MAKERSHELF_DATA_BACKEND: process.env.MAKERSHELF_DATA_BACKEND,
+    MAKERSHELF_STORAGE_DRIVER: process.env.MAKERSHELF_STORAGE_DRIVER,
+    MAKERSHELF_STORAGE_ROOT: process.env.MAKERSHELF_STORAGE_ROOT,
+    MAKERSHELF_IMPORT_ROOT: process.env.MAKERSHELF_IMPORT_ROOT,
+    MAKERSHELF_PRUSASLICER_IMPORT_ROOT: process.env.MAKERSHELF_PRUSASLICER_IMPORT_ROOT,
+    MAKERSHELF_DEMO_MODE: process.env.MAKERSHELF_DEMO_MODE,
+    MAKERSHELF_AUTH_SECRET: process.env.MAKERSHELF_AUTH_SECRET,
+    MAKERSHELF_BOOTSTRAP_EMAIL: process.env.MAKERSHELF_BOOTSTRAP_EMAIL,
+    MAKERSHELF_BOOTSTRAP_PASSWORD: process.env.MAKERSHELF_BOOTSTRAP_PASSWORD,
+    MAKERSHELF_LDAP_ENABLED: process.env.MAKERSHELF_LDAP_ENABLED,
+    MAKERSHELF_LDAP_URL: process.env.MAKERSHELF_LDAP_URL,
+    MAKERSHELF_LDAP_BIND_DN: process.env.MAKERSHELF_LDAP_BIND_DN,
+    MAKERSHELF_LDAP_BIND_PASSWORD: process.env.MAKERSHELF_LDAP_BIND_PASSWORD,
+    MAKERSHELF_LDAP_SEARCH_BASE: process.env.MAKERSHELF_LDAP_SEARCH_BASE,
+    MAKERSHELF_LDAP_SEARCH_FILTER: process.env.MAKERSHELF_LDAP_SEARCH_FILTER,
+    MAKERSHELF_LDAP_ATTR_EMAIL: process.env.MAKERSHELF_LDAP_ATTR_EMAIL,
+    MAKERSHELF_LDAP_ATTR_NAME: process.env.MAKERSHELF_LDAP_ATTR_NAME,
+    MAKERSHELF_LDAP_GROUP_SEARCH_BASE: process.env.MAKERSHELF_LDAP_GROUP_SEARCH_BASE,
+    MAKERSHELF_LDAP_GROUP_ATTR_MEMBER: process.env.MAKERSHELF_LDAP_GROUP_ATTR_MEMBER,
+    MAKERSHELF_LDAP_GROUP_MAP_ADMIN: process.env.MAKERSHELF_LDAP_GROUP_MAP_ADMIN,
+    MAKERSHELF_LDAP_GROUP_MAP_EDITOR: process.env.MAKERSHELF_LDAP_GROUP_MAP_EDITOR,
+    MAKERSHELF_LDAP_GROUP_MAP_UPLOADER: process.env.MAKERSHELF_LDAP_GROUP_MAP_UPLOADER,
+    MAKERSHELF_LDAP_DEFAULT_ROLE: process.env.MAKERSHELF_LDAP_DEFAULT_ROLE,
+  });
+}

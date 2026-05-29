@@ -1,0 +1,88 @@
+services:
+  makershelf:
+    image: ghcr.io/nilsn3dp/makershelf-server:beta
+    container_name: makershelf-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+
+      # ──────────────────────────────────────────────────────────
+      # PFLICHTFELDER — vor dem ersten Start anpassen
+      # ──────────────────────────────────────────────────────────
+
+      # Datenbankpasswort — muss mit POSTGRES_PASSWORD unten übereinstimmen
+      DATABASE_URL: postgres://makershelf:DEIN_PASSWORT@postgres:5432/makershelf
+
+      # Langer, zufälliger String für Session-Sicherheit (min. 32 Zeichen)
+      # Tipp: openssl rand -hex 32
+      MAKERSHELF_AUTH_SECRET: LANGEN_ZUFAELLIGEN_SECRET_HIER
+
+      # Erster Administrator — nur beim allerersten Start verwendet
+      MAKERSHELF_BOOTSTRAP_EMAIL: admin@example.com
+      MAKERSHELF_BOOTSTRAP_PASSWORD: ChangeMe123!
+
+      # ──────────────────────────────────────────────────────────
+      # OPTIONAL — nur ändern wenn nötig
+      # ──────────────────────────────────────────────────────────
+
+      # Name des Workspace, erscheint oben links in der Navigation
+      MAKERSHELF_APP_NAME: makershelf Server
+
+      # Lizenz — community für die kostenlose Version
+      MAKERSHELF_LICENSE_TIER: community
+      MAKERSHELF_LICENSE_KEY: MAKERSHELF-COMMUNITY-unraid-compose
+
+      # Update-Kanal: beta oder stable
+      MAKERSHELF_UPDATE_CHANNEL: beta
+
+      # ──────────────────────────────────────────────────────────
+      # NICHT ÄNDERN — interne Konfiguration
+      # ──────────────────────────────────────────────────────────
+      MAKERSHELF_PRODUCT_PROFILE: server
+      DATABASE_PROVIDER: postgresql
+      MAKERSHELF_DEPLOYMENT_MODE: docker-team
+      MAKERSHELF_DATA_BACKEND: postgres
+      MAKERSHELF_STORAGE_DRIVER: filesystem
+      MAKERSHELF_APPDATA_ROOT: /config
+      MAKERSHELF_STORAGE_ROOT: /storage
+      MAKERSHELF_IMPORT_ROOT: /import
+
+    volumes:
+      - /mnt/user/appdata/makershelf:/config
+      - /mnt/user/Makershelf/Projects:/storage
+      - /mnt/user/Makershelf/Import:/import
+    networks:
+      - makershelf-internal
+      - makershelf-frontend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: makershelf-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: makershelf
+      POSTGRES_USER: makershelf
+      # Muss mit dem Passwort in DATABASE_URL oben übereinstimmen
+      POSTGRES_PASSWORD: DEIN_PASSWORT
+    volumes:
+      - /mnt/user/appdata/makershelf/db:/var/lib/postgresql/data
+    networks:
+      - makershelf-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U makershelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  # Internes Netz: nur makershelf ↔ postgres, kein Außenzugriff auf DB
+  makershelf-internal:
+    driver: bridge
+    internal: true
+  # Frontend-Netz: makershelf erreichbar von außen / Reverse Proxy
+  makershelf-frontend:
+    driver: bridge

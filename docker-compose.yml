@@ -1,0 +1,43 @@
+services:
+  makershelf:
+    build:
+      context: .
+      args:
+        DATABASE_PROVIDER: postgresql
+        DATABASE_URL: postgres://makershelf:makershelf@postgres:5432/makershelf
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      MAKERSHELF_PRODUCT_PROFILE: server
+      DATABASE_PROVIDER: postgresql
+      MAKERSHELF_DEPLOYMENT_MODE: docker-team
+      MAKERSHELF_DATA_BACKEND: postgres
+      MAKERSHELF_STORAGE_DRIVER: filesystem
+      MAKERSHELF_STORAGE_ROOT: /data/storage
+      MAKERSHELF_PRUSASLICER_IMPORT_ROOT: /data/prusaslicer-import
+      MAKERSHELF_AUTH_SECRET: change-this-long-random-secret
+      DATABASE_URL: postgres://makershelf:makershelf@postgres:5432/makershelf
+      MAKERSHELF_LICENSE_TIER: community
+      MAKERSHELF_LICENSE_KEY: MAKERSHELF-COMMUNITY-compose
+    volumes:
+      - makershelf_data:/data/storage
+      - makershelf_prusaslicer_import:/data/prusaslicer-import
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: makershelf
+      POSTGRES_USER: makershelf
+      POSTGRES_PASSWORD: makershelf
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  makershelf_data:
+  makershelf_prusaslicer_import:
+  postgres_data:
