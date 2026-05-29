@@ -152,6 +152,21 @@ async function fetchPrusaLink(
     if (!legacyRes.ok) throw new Error(`HTTP ${legacyRes.status}`);
     return parsePrusaLinkLegacy(await legacyRes.json() as Record<string, unknown>);
   }
+  // 204 = printer is idle, no active job — valid response, no body
+  if (jobRes.status === 204) {
+    let bedTempC: number | null = null;
+    let nozzleTempC: number | null = null;
+    try {
+      const statusRes = await doFetch(`${base}/api/v1/status`);
+      if (statusRes.ok) {
+        const sd = await statusRes.json() as Record<string, unknown>;
+        const printer = sd.printer as Record<string, unknown> | undefined;
+        bedTempC = typeof printer?.temp_bed === "number" ? printer.temp_bed : null;
+        nozzleTempC = typeof printer?.temp_nozzle === "number" ? printer.temp_nozzle : null;
+      }
+    } catch { /* temperatures optional */ }
+    return { ok: true, connected: true, state: "IDLE", progress: null, jobName: null, filamentUsedMm: null, filamentUsedG: null, timeRemainingS: null, timePrintingS: null, bedTempC, nozzleTempC };
+  }
   if (!jobRes.ok) throw new Error(`HTTP ${jobRes.status}`);
   const jobData = await jobRes.json() as Record<string, unknown>;
 
