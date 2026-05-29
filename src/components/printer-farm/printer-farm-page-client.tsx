@@ -215,6 +215,115 @@ function IconStop() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>;
 }
 
+// ─── Webcam Player ────────────────────────────────────────────────────────────
+// Tries go2rtc WebRTC via WebSocket signaling first; falls back to <img> for
+// plain MJPEG/snapshot streams. No STUN needed on LAN, no auth needed for
+// direct go2rtc access. Stream name: ?src= param > last path segment > "camera".
+
+function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [mode, setMode] = useState<"loading" | "webrtc" | "img">("loading");
+
+  useEffect(() => {
+    setMode("loading");
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    let pc: RTCPeerConnection | null = null;
+
+    const connect = async () => {
+      try {
+        const u = new URL(webcamUrl);
+        const srcParam = u.searchParams.get("src");
+        const pathSegment = u.pathname.split("/").filter(Boolean).at(-1);
+        const streamName = srcParam ?? pathSegment ?? "camera";
+        const wsProto = u.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProto}//${u.host}/api/ws?src=${encodeURIComponent(streamName)}`;
+
+        // Open WebSocket — 4-second timeout to decide if go2rtc is available
+        await new Promise<void>((resolve, reject) => {
+          const socket = new WebSocket(wsUrl);
+          ws = socket;
+          const timer = setTimeout(() => { socket.close(); reject(new Error("timeout")); }, 4000);
+          socket.onopen = () => { clearTimeout(timer); resolve(); };
+          socket.onerror = () => { clearTimeout(timer); reject(new Error("ws error")); };
+        });
+
+        if (cancelled) return;
+
+        pc = new RTCPeerConnection({ iceServers: [] });
+        pc.addTransceiver("video", { direction: "recvonly" });
+
+        pc.ontrack = (evt) => {
+          if (cancelled) return;
+          if (videoRef.current) videoRef.current.srcObject = evt.streams[0];
+          setMode("webrtc");
+        };
+
+        pc.onicecandidate = (evt) => {
+          if (evt.candidate && ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "webrtc/candidate", value: evt.candidate.candidate }));
+          }
+        };
+
+        // ws is guaranteed non-null here: the Promise above resolves only on onopen
+        const wsRef = ws as WebSocket;
+        wsRef.onmessage = async (evt) => {
+          if (cancelled || !pc) return;
+          try {
+            const msg = JSON.parse(evt.data as string) as { type: string; value: string };
+            if (msg.type === "webrtc/answer") {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.value });
+            } else if (msg.type === "webrtc/candidate") {
+              await pc.addIceCandidate({ candidate: msg.value, sdpMid: "0" });
+            }
+          } catch { /* ignore malformed messages */ }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        wsRef.send(JSON.stringify({ type: "webrtc/offer", value: offer.sdp }));
+
+      } catch {
+        if (!cancelled) setMode("img");
+      }
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      ws?.close();
+      pc?.close();
+    };
+  }, [webcamUrl]);
+
+  return (
+    <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9", position: "relative" }}>
+      {/* Video always in DOM so videoRef.current is available when ontrack fires */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "100%", height: "100%", objectFit: "contain", display: mode === "webrtc" ? "block" : "none" }}
+      />
+      {mode === "img" && (
+        <img
+          src={webcamUrl}
+          alt="Webcam"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0.3"; }}
+        />
+      )}
+      {mode === "loading" && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: "22px", height: "22px", border: "2.5px solid rgba(255,255,255,0.15)", borderTopColor: "rgba(255,255,255,0.7)", borderRadius: "50%", animation: "pf-spin 0.75s linear infinite" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Control Button ───────────────────────────────────────────────────────────
 
 function ControlButton({ printerId, action, lang, onDone, danger, children }: {
@@ -363,7 +472,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
             {([
               { label: "API URL *", value: apiUrl, set: setApiUrl, placeholder: "http://192.168.1.100", type: "url" },
               { label: "API Key", value: apiKey, set: setApiKey, placeholder: text(lang, "Leer lassen wenn nicht benötigt", "Leave empty if not needed"), type: "password" },
-              { label: text(lang, "Webcam URL", "Webcam URL"), value: webcamUrl, set: setWebcamUrl, placeholder: "http://192.168.1.100/webcam", type: "url" },
+              { label: text(lang, "Webcam URL", "Webcam URL"), value: webcamUrl, set: setWebcamUrl, placeholder: "http://192.168.1.144:1984  (go2rtc / WebRTC)", type: "text" },
             ] as const).map(({ label, value, set, placeholder, type }) => (
               <div key={label}>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{label}</label>
@@ -952,11 +1061,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
               <button type="button" className="btn btn-ghost btn-sm" onClick={onStatusRefresh}><IconRefresh /></button>
             </div>
 
-            {printer.webcamUrl && (
-              <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9" }}>
-                <img src={printer.webcamUrl} alt="Webcam" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              </div>
-            )}
+            {printer.webcamUrl && <WebcamPlayer webcamUrl={printer.webcamUrl} />}
 
             {status?.connected && status.state?.toLowerCase() === "printing" && status.progress != null && (
               <div style={{ marginBottom: "14px" }}>
