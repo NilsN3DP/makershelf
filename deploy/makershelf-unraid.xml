@@ -8,11 +8,11 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/NilsN3DP/makershelf/issues</Support>
   <Project>https://github.com/NilsN3DP/makershelf</Project>
-  <Overview>makershelf Server for Unraid — 3D print file and project manager for makers, workshops and teams. Organise models, track print runs, manage creators and categories.&#xA;&#xA;Note: this is a beta release. Some features may not yet work perfectly — please report issues on GitHub.&#xA;&#xA;Before starting makershelf: install a PostgreSQL container from Community Apps (search "postgres"), create a database named "makershelf" with a dedicated user, then fill in the PostgreSQL Connection field below with matching credentials.</Overview>
+  <Overview>makershelf Server for Unraid — 3D print file and project manager for makers, workshops and teams. Organise models, track filament, manage your printer farm and maintenance schedules.&#xA;&#xA;Note: this is a beta release. Please report issues on GitHub.&#xA;&#xA;Before starting: install a PostgreSQL container from Community Apps (search "postgres"), create a database named "makershelf" with a dedicated user, then fill in the PostgreSQL Connection field below. On first launch, open the Web UI and follow the setup wizard to create your workspace and first admin account.</Overview>
   <Category>Productivity:Tools</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/deploy/makershelf-unraid.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/public/makershelf-logo.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/public/makershelf-logo.png</Icon>
   <DonateText>If you find makershelf useful, consider supporting the project.</DonateText>
   <DonateLink>https://buymeacoffee.com/n3dp</DonateLink>
   <Requires>PostgreSQL server</Requires>
@@ -43,14 +43,6 @@
   <Config Name="Session Secret" Target="MAKERSHELF_AUTH_SECRET" Default="" Mode="" Type="Variable"
           Display="always" Required="true" Mask="true"
           Description="Long random secret for login sessions. Generate one with: openssl rand -hex 32"></Config>
-
-  <Config Name="First Admin Email" Target="MAKERSHELF_BOOTSTRAP_EMAIL" Default="admin@example.com" Mode="" Type="Variable"
-          Display="always" Required="true" Mask="false"
-          Description="Email address for the first admin account created on first start.">admin@example.com</Config>
-
-  <Config Name="First Admin Password" Target="MAKERSHELF_BOOTSTRAP_PASSWORD" Default="ChangeMe123!" Mode="" Type="Variable"
-          Display="always" Required="true" Mask="true"
-          Description="Initial password for the first admin account. Change it after the first login.">ChangeMe123!</Config>
 
   <Config Name="PostgreSQL Connection" Target="DATABASE_URL" Default="postgresql://makershelf:change-me@makershelf-postgres:5432/makershelf" Mode="" Type="Variable"
           Display="always" Required="true" Mask="true"
