@@ -1,0 +1,628 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  UPLOADER
+  READER
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  PRINTING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum FileSource {
+  UPLOAD
+  ZIP
+  WEBSITE
+  INDEXING
+}
+
+enum StorageDriver {
+  INDEXEDDB
+  FILESYSTEM
+  S3_COMPATIBLE
+}
+
+enum FilamentScope {
+  PRIVATE
+  TEAM
+}
+
+enum FilamentStatus {
+  FULL
+  OPEN
+  LOW
+  EMPTY
+  ARCHIVED
+}
+
+model Workspace {
+  id             String           @id @default(cuid())
+  slug           String           @unique
+  name           String
+  deploymentMode String           @default("single-user")
+  dataBackend    String           @default("browser")
+  storageDriver  StorageDriver    @default(INDEXEDDB)
+  language       String           @default("de")
+  themeMode      String           @default("system")
+  primaryColor   String           @default("#f97316")
+  secondaryColor String           @default("#1e293b")
+  settingsJson   Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  memberships    WorkspaceMember[]
+  categories     Category[]
+  creators       Creator[]
+  lists          ProjectList[]
+  projects       Project[]
+  auditLogs      AuditLog[]
+  invites        WorkspaceInvite[]
+  guestSubmissionLinks GuestProjectSubmissionLink[]
+  filamentSpools        FilamentSpool[]
+  filamentUsage         FilamentUsage[]
+  printerFarmGroups         PrinterFarmGroup[]
+  printerFarmPrinters       PrinterFarmPrinter[]
+  printerFarmMaintenanceLogs PrinterFarmMaintenanceLog[]
+  printerFarmFilamentLogs   PrinterFarmFilamentLog[]
+  laserFiles                LaserFile[]
+  laserMaterialProfiles     LaserMaterialProfile[]
+}
+
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  name             String
+  passwordHash     String
+  role             UserRole          @default(READER)
+  status           MembershipStatus  @default(ACTIVE)
+  locale           String            @default("de")
+  image            String?
+  twoFactorEnabled Boolean           @default(false)
+  forcePasswordChange Boolean        @default(false)
+  authProvider     String            @default("local")
+  ldapDn           String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  memberships      WorkspaceMember[]
+  sessions         Session[]
+  twoFactorSecret  TwoFactorSecret?
+  auditLogs        AuditLog[]
+  sentInvites      WorkspaceInvite[]  @relation("InviteSender")
+  ownedFilamentSpools   FilamentSpool[]        @relation("FilamentOwner")
+  createdFilamentSpools FilamentSpool[]        @relation("FilamentCreator")
+  filamentUsage         FilamentUsage[]
+  printerFarmGroups          PrinterFarmGroup[]
+  printerFarmPrinters        PrinterFarmPrinter[]
+  printerFarmMaintenanceLogs PrinterFarmMaintenanceLog[]
+  printerFarmFilamentLogs    PrinterFarmFilamentLog[]
+  laserFiles                 LaserFile[]
+  laserMaterialProfiles      LaserMaterialProfile[]
+}
+
+model WorkspaceMember {
+  id          String           @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        UserRole
+  canUpload   Boolean          @default(false)
+  readOnly    Boolean          @default(false)
+  status      MembershipStatus @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId, role])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  tokenHash    String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  twoFactorAt  DateTime?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model TwoFactorSecret {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  secret         String
+  backupCodes    Json
+  verifiedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  description String
+  emoji       String
+  color       String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects    Project[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, name])
+}
+
+model Creator {
+  id          String          @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folders     CreatorFolder[]
+  projects    Project[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, name])
+}
+
+model CreatorFolder {
+  id         String    @id @default(cuid())
+  creatorId   String
+  slug        String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  creator     Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  projects    Project[]
+
+  @@unique([creatorId, slug])
+}
+
+model Project {
+  id              String              @id @default(cuid())
+  workspaceId     String
+  categoryId      String?
+  creatorId       String?
+  creatorFolderId String?
+  title           String
+  slug            String
+  description     String
+  author          String
+  license         String
+  sourceUrl       String?
+  sourcePlatform  String?
+  coverImage      String?
+  coverLabel      String?
+  coverGradient   String?
+  thumbnailFileId String?
+  favorite        Boolean             @default(false)
+  status          ProjectStatus       @default(PLANNED)
+  tags            Json
+  lockedFields    Json
+  metadataJson    Json?
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  workspace       Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category        Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  creator         Creator?            @relation(fields: [creatorId], references: [id], onDelete: SetNull)
+  creatorFolder   CreatorFolder?      @relation(fields: [creatorFolderId], references: [id], onDelete: SetNull)
+  files           ProjectFile[]
+  listEntries     ProjectListEntry[]
+  steps           ProjectStep[]
+  shoppingItems   ShoppingItem[]
+  links           ProjectLink[]
+  printedFiles    PrintedFileState[]
+  guestLinks      ProjectGuestLink[]
+  filamentUsage   FilamentUsage[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, updatedAt])
+  @@index([workspaceId, status])
+}
+
+model FilamentSpool {
+  id                    String          @id @default(cuid())
+  workspaceId           String
+  scope                 FilamentScope   @default(PRIVATE)
+  ownerUserId           String?
+  createdByUserId       String
+  name                  String
+  manufacturer          String?
+  filamentSeries        String?
+  manufacturerSku       String?
+  vendorName            String?
+  purchaseDate          DateTime?
+  purchasePriceCents    Int?
+  lotNumber             String?
+  material              String
+  colorName             String?
+  colorHex              String?
+  diameterMm            Float           @default(1.75)
+  densityGcm3           Float?
+  nozzleTempMinC        Int?
+  nozzleTempMaxC        Int?
+  bedTempC              Int?
+  flowFactor            Float?
+  dryingTempC           Int?
+  dryingHours           Float?
+  netWeightGrams        Int?
+  tareWeightGrams       Int?
+  remainingWeightGrams  Int?
+  location              String?
+  status                FilamentStatus  @default(FULL)
+  barcodeValue          String?
+  barcodeFormat         String?
+  externalSpoolUrl      String?
+  lastScannedAt         DateTime?
+  openPrintTagId        String?         @unique
+  openPrintTagVersion   String?
+  openPrintTagPayloadJson Json?
+  notes                 String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  workspace             Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner                 User?           @relation("FilamentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  createdBy             User            @relation("FilamentCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  usage                 FilamentUsage[]
+
+  @@index([workspaceId, scope])
+  @@index([workspaceId, material])
+  @@index([workspaceId, manufacturer])
+  @@index([barcodeValue])
+  @@index([workspaceId, location])
+  @@index([ownerUserId])
+}
+
+model FilamentUsage {
+  id          String        @id @default(cuid())
+  workspaceId String
+  spoolId     String
+  userId      String
+  projectId   String?
+  gramsUsed   Int
+  note        String?
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  spool       FilamentSpool @relation(fields: [spoolId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([spoolId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model ProjectGuestLink {
+  id        String    @id @default(cuid())
+  projectId String
+  token     String    @unique
+  label     String
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([token])
+}
+
+model GuestProjectSubmissionLink {
+  id          String    @id @default(cuid())
+  workspaceId String
+  token       String    @unique
+  label       String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([token])
+}
+
+model ProjectFile {
+  id               String     @id @default(cuid())
+  projectId        String
+  name             String
+  originalName     String
+  type             String
+  mimeType         String?
+  sizeBytes        BigInt
+  storedPath       String
+  storageKey       String?
+  checksumSha256   String?
+  originalPath     String?
+  folderPath       String?
+  notes            String     @default("")
+  source           FileSource
+  extractedFromZip String?
+  uploadedAt       DateTime   @default(now())
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  project          Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, uploadedAt])
+  @@index([checksumSha256])
+  @@index([type])
+}
+
+model ProjectList {
+  id          String             @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  isSystem    Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries     ProjectListEntry[]
+
+  @@unique([workspaceId, slug])
+}
+
+model ProjectListEntry {
+  id        String      @id @default(cuid())
+  listId     String
+  projectId  String
+  createdAt  DateTime   @default(now())
+  list       ProjectList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, projectId])
+  @@index([projectId])
+}
+
+model ProjectStep {
+  id         String   @id @default(cuid())
+  projectId   String
+  label       String
+  sortOrder   Int      @default(0)
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, sortOrder])
+}
+
+model ShoppingItem {
+  id         String   @id @default(cuid())
+  projectId   String
+  label       String
+  quantity    String?
+  url         String?
+  purchased   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, sortOrder])
+}
+
+model ProjectLink {
+  id         String   @id @default(cuid())
+  projectId   String
+  label       String
+  url         String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, sortOrder])
+}
+
+model PrintedFileState {
+  id          String   @id @default(cuid())
+  projectId    String
+  projectFileId String
+  printed     Boolean  @default(false)
+  printedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, projectFileId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  message     String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model PrinterFarmGroup {
+  id          String               @id @default(cuid())
+  workspaceId String
+  ownerUserId String
+  name        String
+  color       String               @default("#6366f1")
+  sortOrder   Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  printers    PrinterFarmPrinter[]
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner       User                 @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, sortOrder])
+  @@index([ownerUserId])
+}
+
+model PrinterFarmPrinter {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  ownerUserId     String
+  groupId         String?
+  name            String
+  model           String?
+  location        String?
+  apiType         String    @default("prusa-link")
+  apiUrl          String
+  apiKey          String?
+  webcamUrl       String?
+  active          Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  tags            Json      @default("[]")
+  notes           String    @default("")
+  lastJobName     String    @default("")
+  lastJobAt       DateTime?
+  totalPrintTimeS Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  workspace       Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner           User                       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  group           PrinterFarmGroup?          @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  maintenanceLogs PrinterFarmMaintenanceLog[]
+  filamentLogs    PrinterFarmFilamentLog[]
+
+  @@index([workspaceId, sortOrder])
+  @@index([workspaceId, groupId])
+  @@index([ownerUserId])
+}
+
+model PrinterFarmMaintenanceLog {
+  id           String             @id @default(cuid())
+  printerId    String
+  workspaceId  String
+  ownerUserId  String
+  type         String             @default("other")
+  notes        String             @default("")
+  performedAt  DateTime           @default(now())
+  createdAt    DateTime           @default(now())
+  printer      PrinterFarmPrinter @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User               @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, performedAt])
+  @@index([workspaceId])
+}
+
+model PrinterFarmFilamentLog {
+  id           String             @id @default(cuid())
+  printerId    String
+  workspaceId  String
+  ownerUserId  String
+  spoolId      String?
+  materialName String             @default("")
+  colorName    String             @default("")
+  gramsUsed    Float
+  jobName      String             @default("")
+  notes        String             @default("")
+  loggedAt     DateTime           @default(now())
+  createdAt    DateTime           @default(now())
+  printer      PrinterFarmPrinter @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User               @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, loggedAt])
+  @@index([workspaceId])
+  @@index([spoolId])
+}
+
+model LaserFile {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  ownerUserId  String
+  deviceType   String    @default("laser")
+  name         String
+  originalName String
+  fileType     String
+  sizeBytes    BigInt    @default(0)
+  storedPath   String
+  tags         Json      @default("[]")
+  notes        String    @default("")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deviceType, createdAt])
+  @@index([ownerUserId])
+}
+
+model LaserMaterialProfile {
+  id          String    @id @default(cuid())
+  workspaceId String
+  ownerUserId String
+  deviceType  String    @default("laser")
+  name        String
+  material    String
+  laserType   String    @default("CO2")
+  powerPct    Int       @default(80)
+  speedMmMin  Int       @default(500)
+  passes      Int       @default(1)
+  intervalMm  Float?
+  airAssist   Boolean   @default(false)
+  notes       String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner       User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deviceType, material])
+  @@index([ownerUserId])
+}
+
+model WorkspaceInvite {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  email           String
+  token           String           @unique
+  role            UserRole
+  canUpload       Boolean          @default(false)
+  readOnly        Boolean          @default(false)
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy       User?            @relation("InviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, email])
+  @@index([workspaceId, expiresAt])
+}

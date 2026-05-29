@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Makershelf</Name>
+  <Repository>ghcr.io/nilsn3dp/makershelf-server:beta</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/NilsN3DP/makershelf/issues</Support>
+  <Project>https://github.com/NilsN3DP/makershelf</Project>
+  <Overview>makershelf Server for Unraid — 3D print file and project manager for makers, workshops and teams. Organise models, track print runs, manage creators and categories.&#xA;&#xA;Note: this is a beta release. Some features may not yet work perfectly — please report issues on GitHub.&#xA;&#xA;Before starting makershelf: install a PostgreSQL container from Community Apps (search "postgres"), create a database named "makershelf" with a dedicated user, then fill in the PostgreSQL Connection field below with matching credentials.</Overview>
+  <Category>Productivity:Tools</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/deploy/makershelf-unraid.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/NilsN3DP/makershelf/main/public/makershelf-logo.svg</Icon>
+  <DonateText>If you find makershelf useful, consider supporting the project.</DonateText>
+  <DonateLink>https://buymeacoffee.com/n3dp</DonateLink>
+  <Requires>PostgreSQL server</Requires>
+
+  <!-- Ports -->
+  <Config Name="Web UI Port" Target="8080" Default="8080" Mode="tcp" Type="Port"
+          Display="always" Required="true" Mask="false"
+          Description="Port for the web interface. Leave as 8080 when using a dedicated container IP.">8080</Config>
+
+  <!-- Volumes -->
+  <Config Name="AppData" Target="/config" Default="/mnt/user/appdata/makershelf" Mode="rw" Type="Path"
+          Display="always" Required="true" Mask="false"
+          Description="AppData folder for configuration and runtime files.">/mnt/user/appdata/makershelf</Config>
+
+  <Config Name="Project Storage" Target="/storage" Default="/mnt/user/Makershelf/Projects" Mode="rw" Type="Path"
+          Display="always" Required="true" Mask="false"
+          Description="Folder where imported project files are stored permanently.">/mnt/user/Makershelf/Projects</Config>
+
+  <Config Name="Import Folder" Target="/import" Default="/mnt/user/Makershelf/Import" Mode="rw" Type="Path"
+          Display="always" Required="true" Mask="false"
+          Description="Drop files or library folders here. The server scans this folder for bulk import without a browser upload.">/mnt/user/Makershelf/Import</Config>
+
+  <!-- Required settings -->
+  <Config Name="Internal App Port" Target="PORT" Default="8080" Mode="" Type="Variable"
+          Display="always" Required="true" Mask="false"
+          Description="Port the app listens on inside the container. Must match the Web UI Port when using a dedicated container IP.">8080</Config>
+
+  <Config Name="Session Secret" Target="MAKERSHELF_AUTH_SECRET" Default="" Mode="" Type="Variable"
+          Display="always" Required="true" Mask="true"
+          Description="Long random secret for login sessions. Generate one with: openssl rand -hex 32"></Config>
+
+  <Config Name="First Admin Email" Target="MAKERSHELF_BOOTSTRAP_EMAIL" Default="admin@example.com" Mode="" Type="Variable"
+          Display="always" Required="true" Mask="false"
+          Description="Email address for the first admin account created on first start.">admin@example.com</Config>
+
+  <Config Name="First Admin Password" Target="MAKERSHELF_BOOTSTRAP_PASSWORD" Default="ChangeMe123!" Mode="" Type="Variable"
+          Display="always" Required="true" Mask="true"
+          Description="Initial password for the first admin account. Change it after the first login.">ChangeMe123!</Config>
+
+  <Config Name="PostgreSQL Connection" Target="DATABASE_URL" Default="postgresql://makershelf:change-me@makershelf-postgres:5432/makershelf" Mode="" Type="Variable"
+          Display="always" Required="true" Mask="true"
+          Description="PostgreSQL connection string. Format: postgresql://user:password@host:5432/database — must match the credentials you set up in your PostgreSQL container.">postgresql://makershelf:change-me@makershelf-postgres:5432/makershelf</Config>
+
+  <!-- Fixed internal variables — do not change -->
+  <Config Name="DATABASE_PROVIDER" Target="DATABASE_PROVIDER" Default="postgresql"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">postgresql</Config>
+  <Config Name="MAKERSHELF_PRODUCT_PROFILE" Target="MAKERSHELF_PRODUCT_PROFILE" Default="server"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">server</Config>
+  <Config Name="MAKERSHELF_DEPLOYMENT_MODE" Target="MAKERSHELF_DEPLOYMENT_MODE" Default="docker-team"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">docker-team</Config>
+  <Config Name="MAKERSHELF_DATA_BACKEND" Target="MAKERSHELF_DATA_BACKEND" Default="postgres"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">postgres</Config>
+  <Config Name="MAKERSHELF_STORAGE_DRIVER" Target="MAKERSHELF_STORAGE_DRIVER" Default="filesystem"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">filesystem</Config>
+  <Config Name="MAKERSHELF_APPDATA_ROOT" Target="MAKERSHELF_APPDATA_ROOT" Default="/config"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">/config</Config>
+  <Config Name="MAKERSHELF_STORAGE_ROOT" Target="MAKERSHELF_STORAGE_ROOT" Default="/storage"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">/storage</Config>
+  <Config Name="MAKERSHELF_IMPORT_ROOT" Target="MAKERSHELF_IMPORT_ROOT" Default="/import"
+          Type="Variable" Display="advanced-hide" Required="true" Mask="false">/import</Config>
+</Container>

@@ -1,0 +1,71 @@
+name: Desktop Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+
+jobs:
+  build-desktop:
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: npm run desktop:dist:win
+            artifact: release-desktop
+          - os: ubuntu-latest
+            script: npm run desktop:dist:linux
+            artifact: release-desktop
+          - os: macos-latest
+            script: npm run desktop:dist:mac
+            artifact: release-desktop
+
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop packages
+        run: ${{ matrix.script }}
+
+      - name: Upload artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            ${{ matrix.artifact }}/*
+            !${{ matrix.artifact }}/mac*/**
+            !${{ matrix.artifact }}/win*/**
+            !${{ matrix.artifact }}/*-unpacked/**
+          if-no-files-found: error
+
+      - name: Publish release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-desktop/*.exe
+            release-desktop/*.AppImage
+            release-desktop/*.tar.gz
+            release-desktop/*.dmg
+            release-desktop/*.zip
+            release-desktop/*.blockmap
+          generate_release_notes: true

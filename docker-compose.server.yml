@@ -1,0 +1,48 @@
+services:
+  makershelf:
+    image: ghcr.io/nilsn3dp/makershelf-server:beta
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      MAKERSHELF_APP_NAME: makershelf Server
+      MAKERSHELF_AUTH_SECRET: change-this-long-random-secret
+      MAKERSHELF_BOOTSTRAP_EMAIL: admin@example.com
+      MAKERSHELF_BOOTSTRAP_PASSWORD: ChangeMe123!
+      DATABASE_PROVIDER: postgresql
+      DATABASE_URL: postgresql://makershelf:makershelf@postgres:5432/makershelf
+      MAKERSHELF_PRODUCT_PROFILE: server
+      MAKERSHELF_DEPLOYMENT_MODE: docker-team
+      MAKERSHELF_DATA_BACKEND: postgres
+      MAKERSHELF_STORAGE_DRIVER: filesystem
+      MAKERSHELF_STORAGE_ROOT: /storage
+      MAKERSHELF_IMPORT_ROOT: /import
+      MAKERSHELF_LICENSE_TIER: community
+      MAKERSHELF_LICENSE_KEY: MAKERSHELF-COMMUNITY-local
+    volumes:
+      - makershelf_storage:/storage
+      - makershelf_import:/import
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: makershelf
+      POSTGRES_USER: makershelf
+      POSTGRES_PASSWORD: makershelf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  makershelf_storage:
+  makershelf_import:
+  postgres_data:

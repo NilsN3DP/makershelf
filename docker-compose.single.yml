@@ -1,0 +1,26 @@
+services:
+  makershelf-single:
+    build:
+      context: .
+    container_name: makershelf-single
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      MAKERSHELF_APP_NAME: makershelf Single
+      MAKERSHELF_PRODUCT_PROFILE: single
+      DATABASE_PROVIDER: sqlite
+      DATABASE_URL: file:/data/app/makershelf-single.db
+      MAKERSHELF_LICENSE_TIER: community
+      MAKERSHELF_LICENSE_KEY: MAKERSHELF-COMMUNITY-compose-single
+      MAKERSHELF_DEPLOYMENT_MODE: single-user
+      MAKERSHELF_DATA_BACKEND: browser
+      MAKERSHELF_STORAGE_DRIVER: filesystem
+      MAKERSHELF_STORAGE_ROOT: /data/storage
+    volumes:
+      - makershelf_single_app:/data/app
+      - makershelf_single_storage:/data/storage
+
+volumes:
+  makershelf_single_app:
+  makershelf_single_storage:

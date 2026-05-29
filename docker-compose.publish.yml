@@ -1,0 +1,66 @@
+# Production deployment with Caddy reverse proxy and automatic HTTPS.
+# Copy .env.publish.example to .env.publish, fill in all values, then:
+#   docker compose -f docker-compose.publish.yml --env-file .env.publish up -d
+
+services:
+  makershelf:
+    image: ghcr.io/nilsn3dp/makershelf-server:beta
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      MAKERSHELF_PRODUCT_PROFILE: server
+      MAKERSHELF_DEPLOYMENT_MODE: docker-team
+      MAKERSHELF_DATA_BACKEND: postgres
+      MAKERSHELF_STORAGE_DRIVER: filesystem
+      DATABASE_PROVIDER: ${DATABASE_PROVIDER}
+      DATABASE_URL: ${DATABASE_URL}
+      MAKERSHELF_APP_NAME: ${MAKERSHELF_APP_NAME}
+      MAKERSHELF_AUTH_SECRET: ${MAKERSHELF_AUTH_SECRET}
+      MAKERSHELF_BOOTSTRAP_EMAIL: ${MAKERSHELF_BOOTSTRAP_EMAIL}
+      MAKERSHELF_BOOTSTRAP_PASSWORD: ${MAKERSHELF_BOOTSTRAP_PASSWORD}
+      MAKERSHELF_STORAGE_ROOT: /storage
+      MAKERSHELF_ENABLE_EXPERIMENTAL_WEBSITE_IMPORT: ${MAKERSHELF_ENABLE_EXPERIMENTAL_WEBSITE_IMPORT:-true}
+      MAKERSHELF_LICENSE_TIER: ${MAKERSHELF_LICENSE_TIER:-community}
+      MAKERSHELF_LICENSE_KEY: ${MAKERSHELF_LICENSE_KEY:-MAKERSHELF-COMMUNITY-publish}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - makershelf_storage:/storage
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - makershelf
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MAKERSHELF_DOMAIN: ${MAKERSHELF_DOMAIN}
+      MAKERSHELF_CONTACT_EMAIL: ${MAKERSHELF_CONTACT_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  makershelf_storage:
+  postgres_data:
+  caddy_data:
+  caddy_config:

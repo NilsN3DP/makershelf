@@ -1,0 +1,129 @@
+{
+  "name": "makershelf",
+  "version": "0.2.9-beta.28",
+  "private": true,
+  "description": "makershelf Single and Server Edition",
+  "author": "Nils / N3DP",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "next dev",
+    "dev:single": "node scripts/run-profile.mjs single dev",
+    "dev:server": "node scripts/run-profile.mjs server dev",
+    "preview": "next build && next start",
+    "preview:single": "node scripts/run-profile.mjs single preview",
+    "preview:server": "node scripts/run-profile.mjs server preview",
+    "build": "node scripts/prisma-run.mjs generate && node scripts/clean-build.mjs && next build",
+    "build:single": "node scripts/run-profile.mjs single build",
+    "build:server": "node scripts/run-profile.mjs server build",
+    "start": "next start",
+    "start:single": "node scripts/run-profile.mjs single start",
+    "start:server": "node scripts/run-profile.mjs server start",
+    "lint": "eslint",
+    "live:check": "node scripts/check-live-env.mjs .env.live",
+    "publish:check": "node scripts/check-live-env.mjs .env.publish",
+    "db:generate": "node scripts/prisma-run.mjs generate",
+    "db:push": "node scripts/prisma-run.mjs db push",
+    "db:seed": "node prisma/seed.mjs",
+    "docs:screenshots": "node scripts/capture-screenshots.mjs",
+    "qa:smoke": "node scripts/smoke-check.mjs",
+    "qa:full": "node scripts/full-qa.mjs",
+    "qa:stress": "node scripts/stress-check.mjs",
+    "package:github": "node scripts/export-github-package.mjs",
+    "package:single": "node scripts/export-profile-package.mjs single",
+    "package:server": "node scripts/export-profile-package.mjs server",
+    "icons:desktop": "node scripts/generate-app-icons.mjs",
+    "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "desktop:start": "npm run desktop:prepare && electron .",
+    "desktop:dist": "npm run desktop:dist:win",
+    "desktop:dist:win": "npm run desktop:prepare && electron-builder --win nsis portable --publish never",
+    "desktop:dist:linux": "npm run desktop:prepare && electron-builder --linux AppImage tar.gz --publish never",
+    "desktop:dist:mac": "npm run desktop:prepare && electron-builder --mac dmg zip --publish never"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.17.1",
+    "7zip-bin-full": "^26.1.0",
+    "bcryptjs": "^3.0.3",
+    "bonjour-service": "^1.4.0",
+    "jszip": "^3.10.1",
+    "ldapts": "^8.1.7",
+    "next": "16.2.3",
+    "otplib": "^13.4.0",
+    "qrcode": "^1.5.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "three": "^0.183.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.183.1",
+    "electron": "^37.10.3",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.3",
+    "playwright": "^1.59.1",
+    "png-to-ico": "^3.0.1",
+    "prisma": "^6.17.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
+  },
+  "build": {
+    "appId": "com.n3dp.makershelf.single",
+    "productName": "makershelf Single",
+    "asar": false,
+    "directories": {
+      "output": "release-desktop",
+      "buildResources": "build"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "desktop-app/**/*",
+      "prisma/dev.single.template.db",
+      "package.json"
+    ],
+    "icon": "build/icon.png",
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Utility"
+    },
+    "mac": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "nsis": {
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName} ${version}.${ext}"
+    }
+  }
+}
