@@ -1,7 +1,72 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/src/lib/server/prisma";
 import { requireWorkspaceAccess } from "@/src/lib/server/request-context";
+
+// ---------------------------------------------------------------------------
+// HTTP Digest Authentication helper (RFC 7616 / RFC 2617)
+// Used by PrusaLink v1 (Prusa Core One, MK4 with newer firmware).
+// ---------------------------------------------------------------------------
+function md5(s: string): string {
+  return createHash("md5").update(s).digest("hex");
+}
+
+function parseDigestChallenge(header: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const rx = /(\w+)=(?:"([^"]*)"|([\w/+.-]+))/g;
+  let m: RegExpExecArray | null;
+  while ((m = rx.exec(header)) !== null) {
+    params[m[1]] = m[2] ?? m[3];
+  }
+  return params;
+}
+
+async function fetchWithDigestAuth(
+  url: string,
+  init: RequestInit,
+  username: string,
+  password: string,
+): Promise<Response> {
+  // First attempt — may return 401 with Digest challenge.
+  const first = await fetch(url, init);
+  if (first.status !== 401) return first;
+
+  const wwwAuth = first.headers.get("WWW-Authenticate") ?? "";
+  if (!wwwAuth.startsWith("Digest ")) return first;
+
+  const p = parseDigestChallenge(wwwAuth);
+  const { realm = "", nonce = "", qop = "auth", opaque } = p;
+
+  const uri = new URL(url).pathname + new URL(url).search;
+  const method = (typeof init.method === "string" ? init.method : "GET").toUpperCase();
+  const nc = "00000001";
+  const cnonce = Math.random().toString(36).slice(2, 10);
+
+  const ha1 = md5(`${username}:${realm}:${password}`);
+  const ha2 = md5(`${method}:${uri}`);
+  const response = qop
+    ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    : md5(`${ha1}:${nonce}:${ha2}`);
+
+  const parts = [
+    `username="${username}"`,
+    `realm="${realm}"`,
+    `nonce="${nonce}"`,
+    `uri="${uri}"`,
+    `nc=${nc}`,
+    `cnonce="${cnonce}"`,
+    `response="${response}"`,
+  ];
+  if (qop) parts.push(`qop=${qop}`);
+  if (opaque) parts.push(`opaque="${opaque}"`);
+
+  const headers = new Headers(init.headers as HeadersInit | undefined);
+  headers.set("Authorization", `Digest ${parts.join(", ")}`);
+
+  return fetch(url, { ...init, headers });
+}
 
 export type PrinterFarmStatus = {
   ok: boolean;
@@ -50,7 +115,7 @@ export async function GET(
   try {
     let status: PrinterFarmStatus;
     if (printer.apiType === "prusa-link") {
-      status = await fetchPrusaLink(base, headers, abort.signal);
+      status = await fetchPrusaLink(base, headers, abort.signal, printer.apiKey?.trim() ?? "");
     } else if (printer.apiType === "moonraker") {
       status = await fetchMoonraker(base, headers, abort.signal);
     } else {
@@ -71,10 +136,19 @@ async function fetchPrusaLink(
   base: string,
   headers: Record<string, string>,
   signal: AbortSignal,
+  apiKey: string,
 ): Promise<PrinterFarmStatus> {
-  const jobRes = await fetch(`${base}/api/v1/job`, { headers, signal });
+  // PrusaLink v1 (Core One, newer MK4) uses HTTP Digest auth with username "maker".
+  // Older PrusaLink uses X-Api-Key header (already set in `headers`).
+  // We attempt the request; if we get a Digest challenge we retry automatically.
+  const doFetch = (url: string) =>
+    apiKey
+      ? fetchWithDigestAuth(url, { headers, signal }, "maker", apiKey)
+      : fetch(url, { headers, signal });
+
+  const jobRes = await doFetch(`${base}/api/v1/job`);
   if (jobRes.status === 404) {
-    const legacyRes = await fetch(`${base}/api/job`, { headers, signal });
+    const legacyRes = await doFetch(`${base}/api/job`);
     if (!legacyRes.ok) throw new Error(`HTTP ${legacyRes.status}`);
     return parsePrusaLinkLegacy(await legacyRes.json() as Record<string, unknown>);
   }
@@ -84,7 +158,7 @@ async function fetchPrusaLink(
   let bedTempC: number | null = null;
   let nozzleTempC: number | null = null;
   try {
-    const statusRes = await fetch(`${base}/api/v1/status`, { headers, signal });
+    const statusRes = await doFetch(`${base}/api/v1/status`);
     if (statusRes.ok) {
       const sd = await statusRes.json() as Record<string, unknown>;
       const printer = sd.printer as Record<string, unknown> | undefined;
