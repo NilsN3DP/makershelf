@@ -539,13 +539,56 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
             {([
               { label: "API URL *", value: apiUrl, set: setApiUrl, placeholder: "http://192.168.1.100", type: "url" },
               { label: "API Key", value: apiKey, set: setApiKey, placeholder: text(lang, "Leer lassen wenn nicht benötigt", "Leave empty if not needed"), type: "password" },
-              { label: text(lang, "Webcam URL", "Webcam URL"), value: webcamUrl, set: setWebcamUrl, placeholder: "http://192.168.1.144:1984  (go2rtc / WebRTC)", type: "text" },
             ] as const).map(({ label, value, set, placeholder, type }) => (
               <div key={label}>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{label}</label>
                 <input className="input" style={{ width: "100%" }} type={type} value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} />
               </div>
             ))}
+
+            {/* ── Webcam URL with setup guide ── */}
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>
+                {text(lang, "Webcam URL", "Webcam URL")}
+              </label>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input
+                  className="input"
+                  style={{ flex: 1 }}
+                  type="text"
+                  value={webcamUrl}
+                  onChange={(e) => setWebcamUrl(e.target.value)}
+                  placeholder={text(lang, "Leer lassen = keine Kamera", "Leave empty = no camera")}
+                />
+                {printer && apiType === "prusa-link" && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                    onClick={() => setWebcamUrl(`/api/printer-farm/printers/${printer.id}/snapshot`)}
+                  >
+                    {text(lang, "Prusa Kamera", "Prusa Camera")}
+                  </button>
+                )}
+              </div>
+
+              {/* Setup instructions */}
+              <div style={{ marginTop: "8px", padding: "10px 12px", background: "color-mix(in srgb, var(--primary) 8%, var(--panel))", borderRadius: "6px", fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.6" }}>
+                <p style={{ fontWeight: 600, marginBottom: "4px", color: "var(--text)" }}>
+                  {text(lang, "Einrichtung", "Setup")}
+                </p>
+                <p style={{ marginBottom: "6px" }}>
+                  <strong>{text(lang, "Prusa Drucker mit Buddy3D / eingebauter Kamera:", "Prusa printer with Buddy3D / built-in camera:")}</strong>
+                  {" "}{text(lang, 'Klicke auf "Prusa Kamera" — der Snapshot wird direkt über PrusaLink abgerufen. API Key muss gesetzt sein.', 'Click "Prusa Camera" — snapshot is fetched directly via PrusaLink. API Key must be set.')}
+                </p>
+                <p>
+                  <strong>{text(lang, "go2rtc / externe Kamera:", "go2rtc / external camera:")}</strong>
+                  {" "}{text(lang, "Trage die Basis-URL des go2rtc-Geräts ein, z.B.", "Enter the base URL of the go2rtc device, e.g.")}{" "}
+                  <code style={{ background: "var(--panel)", padding: "1px 4px", borderRadius: "3px", fontSize: "11px" }}>http://192.168.1.x</code>
+                  {text(lang, ". MJPEG-Stream und WebRTC werden automatisch erkannt.", ". MJPEG stream and WebRTC are detected automatically.")}
+                </p>
+              </div>
+            </div>
           </>
         )}
 
