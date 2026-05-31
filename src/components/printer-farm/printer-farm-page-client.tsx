@@ -250,25 +250,35 @@ function buildCamUrl(webcamUrl: string, type: "mjpeg" | "frame"): string {
 }
 
 // ─── Webcam Player ────────────────────────────────────────────────────────────
-// Two modes depending on webcamUrl:
+// Routing by webcamUrl:
 //
-// • Relative URL (starts with "/"): server-side snapshot proxy.
-//   Renders a refreshing <img> re-fetched every 10 s — no WebRTC needed.
-//   Used for Prusa Buddy/Buddy3D cameras via /api/printer-farm/.../snapshot.
+// • rtsp://…   → server-side RTSP→MJPEG proxy (/stream). ffmpeg on the server
+//               transcodes the RTSP feed; browser receives multipart/x-mixed-replace
+//               via a plain <img> tag. Live video, ~10 fps.
 //
-// • Absolute URL: tries go2rtc WebRTC via WebSocket first; falls back to
-//   <img> with the go2rtc MJPEG stream URL (img bypasses CORS on LAN).
+// • /api/…     → server-side snapshot proxy (/snapshot). Single JPEG refreshed
+//               every 10 s. Used as fallback or for PrusaLink without RTSP.
+//
+// • http(s)://… → tries go2rtc WebRTC first; falls back to MJPEG <img>.
 
 const SNAPSHOT_INTERVAL_MS = 10_000;
 
-function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
+function WebcamPlayer({ printerId, webcamUrl }: { printerId: string; webcamUrl: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<"loading" | "webrtc" | "img">("loading");
   const [imgSrc, setImgSrc] = useState("");
 
-  const isSnapshot = webcamUrl.startsWith("/");
+  const isRtsp     = webcamUrl.startsWith("rtsp://");
+  const isSnapshot = !isRtsp && webcamUrl.startsWith("/");
 
   useEffect(() => {
+    if (isRtsp) {
+      // RTSP: use server-side ffmpeg transcoding proxy — always fresh, no caching
+      setImgSrc(`/api/printer-farm/printers/${printerId}/stream?t=${Date.now()}`);
+      setMode("img");
+      return;
+    }
+
     if (isSnapshot) {
       const stamp = () => `${webcamUrl}?t=${Date.now()}`;
       setImgSrc(stamp());
@@ -348,7 +358,7 @@ function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
       ws?.close();
       pc?.close();
     };
-  }, [webcamUrl, isSnapshot]);
+  }, [webcamUrl, printerId, isRtsp, isSnapshot]);
 
   return (
     <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9", position: "relative" }}>
@@ -578,14 +588,20 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
                   {text(lang, "Einrichtung", "Setup")}
                 </p>
                 <p style={{ marginBottom: "6px" }}>
-                  <strong>{text(lang, "Prusa Drucker mit Buddy3D / eingebauter Kamera:", "Prusa printer with Buddy3D / built-in camera:")}</strong>
-                  {" "}{text(lang, 'Klicke auf "Prusa Kamera" — der Snapshot wird direkt über PrusaLink abgerufen. API Key muss gesetzt sein.', 'Click "Prusa Camera" — snapshot is fetched directly via PrusaLink. API Key must be set.')}
+                  <strong>{text(lang, "Prusa Buddy3D / externe RTSP-Kamera:", "Prusa Buddy3D / external RTSP camera:")}</strong>
+                  {" "}{text(lang, "Trage die RTSP-URL der Kamera ein:", "Enter the RTSP URL of the camera:")}{" "}
+                  <code style={{ background: "var(--panel)", padding: "1px 4px", borderRadius: "3px", fontSize: "11px" }}>rtsp://192.168.1.x/live</code>
+                  {". "}{text(lang, "Der Server streamt das Bild automatisch live ins Browser.", "The server streams the video live to the browser automatically.")}
+                </p>
+                <p style={{ marginBottom: "6px" }}>
+                  <strong>{text(lang, "Prusa Drucker mit eingebauter Kamera (Snapshot):", "Prusa printer with built-in camera (snapshot):")}</strong>
+                  {" "}{text(lang, 'Klicke auf "Prusa Kamera" — Einzelbild alle 10 s über PrusaLink. API Key muss gesetzt sein.', 'Click "Prusa Camera" — single frame every 10 s via PrusaLink. API Key must be set.')}
                 </p>
                 <p>
-                  <strong>{text(lang, "go2rtc / externe Kamera:", "go2rtc / external camera:")}</strong>
-                  {" "}{text(lang, "Trage die Basis-URL des go2rtc-Geräts ein, z.B.", "Enter the base URL of the go2rtc device, e.g.")}{" "}
+                  <strong>{text(lang, "go2rtc / externe IP-Kamera:", "go2rtc / external IP camera:")}</strong>
+                  {" "}{text(lang, "Basis-URL des go2rtc-Geräts eintragen, z.B.", "Enter the base URL of the go2rtc device, e.g.")}{" "}
                   <code style={{ background: "var(--panel)", padding: "1px 4px", borderRadius: "3px", fontSize: "11px" }}>http://192.168.1.x</code>
-                  {text(lang, ". MJPEG-Stream und WebRTC werden automatisch erkannt.", ". MJPEG stream and WebRTC are detected automatically.")}
+                  {text(lang, ". MJPEG und WebRTC werden automatisch erkannt.", ". MJPEG and WebRTC are detected automatically.")}
                 </p>
               </div>
             </div>
@@ -1173,7 +1189,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
               <button type="button" className="btn btn-ghost btn-sm" onClick={onStatusRefresh}><IconRefresh /></button>
             </div>
 
-            {printer.webcamUrl && <WebcamPlayer webcamUrl={printer.webcamUrl} />}
+            {printer.webcamUrl && <WebcamPlayer printerId={printer.id} webcamUrl={printer.webcamUrl} />}
 
             {status?.connected && status.state?.toLowerCase() === "printing" && status.progress != null && (
               <div style={{ marginBottom: "14px" }}>
@@ -1506,8 +1522,14 @@ function PrinterCard({ printer, status, lang, onSelect, planSummary }: {
 
       {printer.webcamUrl && (
         <div style={{ borderRadius: "6px", overflow: "hidden", background: "#000", aspectRatio: "16/9" }}>
-          <img src={buildCamUrl(printer.webcamUrl, "frame")} alt="cam" style={{ width: "100%", height: "100%", objectFit: "contain" }}
-            onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
+          <img
+            src={printer.webcamUrl.startsWith("rtsp://")
+              ? `/api/printer-farm/printers/${printer.id}/snapshot`
+              : buildCamUrl(printer.webcamUrl, "frame")}
+            alt="cam"
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }}
+          />
         </div>
       )}
 

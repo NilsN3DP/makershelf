@@ -30,6 +30,10 @@ RUN node scripts/prisma-run.mjs generate && npm run build
 
 FROM base AS runner
 WORKDIR /app
+# ffmpeg is required for RTSP → MJPEG transcoding (webcam streaming proxy)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
