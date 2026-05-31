@@ -21,10 +21,10 @@ function extractFrames(buf: Buffer): { frames: Buffer[]; tail: Buffer } {
     if (soi === -1) { pos = buf.length; break; }
     const eoi = buf.indexOf(Buffer.from([0xff, 0xd9]), soi + 2);
     if (eoi === -1) { pos = soi; break; }
-    frames.push(buf.subarray(soi, eoi + 2));
+    frames.push(buf.subarray(soi, eoi + 2) as Buffer);
     pos = eoi + 2;
   }
-  return { frames, tail: buf.subarray(pos) };
+  return { frames, tail: buf.subarray(pos) as Buffer };
 }
 
 /**
@@ -74,10 +74,10 @@ export async function GET(
         "pipe:1",
       ]);
 
-      let buf = Buffer.alloc(0);
+      let buf: Buffer = Buffer.alloc(0);
 
       ffmpegProc.stdout?.on("data", (chunk: Buffer) => {
-        buf = Buffer.concat([buf, chunk]);
+        buf = Buffer.concat([buf, chunk]) as Buffer;
         const { frames, tail } = extractFrames(buf);
         buf = tail;
         for (const frame of frames) {
