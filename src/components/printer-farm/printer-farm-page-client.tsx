@@ -250,15 +250,34 @@ function buildCamUrl(webcamUrl: string, type: "mjpeg" | "frame"): string {
 }
 
 // ─── Webcam Player ────────────────────────────────────────────────────────────
-// Tries go2rtc WebRTC via WebSocket signaling first; falls back to <img> for
-// MJPEG streams (img tags bypass CORS, so direct LAN access works fine).
-// Stream name: ?src= param > last path segment > "camera".
+// Two modes depending on webcamUrl:
+//
+// • Relative URL (starts with "/"): server-side snapshot proxy.
+//   Renders a refreshing <img> re-fetched every 10 s — no WebRTC needed.
+//   Used for Prusa Buddy/Buddy3D cameras via /api/printer-farm/.../snapshot.
+//
+// • Absolute URL: tries go2rtc WebRTC via WebSocket first; falls back to
+//   <img> with the go2rtc MJPEG stream URL (img bypasses CORS on LAN).
+
+const SNAPSHOT_INTERVAL_MS = 10_000;
 
 function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<"loading" | "webrtc" | "img">("loading");
+  const [imgSrc, setImgSrc] = useState("");
+
+  const isSnapshot = webcamUrl.startsWith("/");
 
   useEffect(() => {
+    if (isSnapshot) {
+      const stamp = () => `${webcamUrl}?t=${Date.now()}`;
+      setImgSrc(stamp());
+      setMode("img");
+      const interval = setInterval(() => setImgSrc(stamp()), SNAPSHOT_INTERVAL_MS);
+      return () => clearInterval(interval);
+    }
+
+    // go2rtc: try WebRTC, fall back to MJPEG img
     setMode("loading");
     let cancelled = false;
     let ws: WebSocket | null = null;
@@ -329,7 +348,7 @@ function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
       ws?.close();
       pc?.close();
     };
-  }, [webcamUrl]);
+  }, [webcamUrl, isSnapshot]);
 
   return (
     <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9", position: "relative" }}>
@@ -343,7 +362,7 @@ function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
       />
       {mode === "img" && (
         <img
-          src={buildCamUrl(webcamUrl, "mjpeg")}
+          src={isSnapshot ? imgSrc : buildCamUrl(webcamUrl, "mjpeg")}
           alt="Webcam"
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
           onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0.3"; }}

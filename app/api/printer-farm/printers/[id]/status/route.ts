@@ -1,72 +1,8 @@
-import { createHash } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/src/lib/server/prisma";
+import { fetchWithDigestAuth } from "@/src/lib/server/digest-auth";
 import { requireWorkspaceAccess } from "@/src/lib/server/request-context";
-
-// ---------------------------------------------------------------------------
-// HTTP Digest Authentication helper (RFC 7616 / RFC 2617)
-// Used by PrusaLink v1 (Prusa Core One, MK4 with newer firmware).
-// ---------------------------------------------------------------------------
-function md5(s: string): string {
-  return createHash("md5").update(s).digest("hex");
-}
-
-function parseDigestChallenge(header: string): Record<string, string> {
-  const params: Record<string, string> = {};
-  const rx = /(\w+)=(?:"([^"]*)"|([\w/+.-]+))/g;
-  let m: RegExpExecArray | null;
-  while ((m = rx.exec(header)) !== null) {
-    params[m[1]] = m[2] ?? m[3];
-  }
-  return params;
-}
-
-async function fetchWithDigestAuth(
-  url: string,
-  init: RequestInit,
-  username: string,
-  password: string,
-): Promise<Response> {
-  // First attempt — may return 401 with Digest challenge.
-  const first = await fetch(url, init);
-  if (first.status !== 401) return first;
-
-  const wwwAuth = first.headers.get("WWW-Authenticate") ?? "";
-  if (!wwwAuth.startsWith("Digest ")) return first;
-
-  const p = parseDigestChallenge(wwwAuth);
-  const { realm = "", nonce = "", qop = "auth", opaque } = p;
-
-  const uri = new URL(url).pathname + new URL(url).search;
-  const method = (typeof init.method === "string" ? init.method : "GET").toUpperCase();
-  const nc = "00000001";
-  const cnonce = Math.random().toString(36).slice(2, 10);
-
-  const ha1 = md5(`${username}:${realm}:${password}`);
-  const ha2 = md5(`${method}:${uri}`);
-  const response = qop
-    ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
-    : md5(`${ha1}:${nonce}:${ha2}`);
-
-  const parts = [
-    `username="${username}"`,
-    `realm="${realm}"`,
-    `nonce="${nonce}"`,
-    `uri="${uri}"`,
-    `nc=${nc}`,
-    `cnonce="${cnonce}"`,
-    `response="${response}"`,
-  ];
-  if (qop) parts.push(`qop=${qop}`);
-  if (opaque) parts.push(`opaque="${opaque}"`);
-
-  const headers = new Headers(init.headers as HeadersInit | undefined);
-  headers.set("Authorization", `Digest ${parts.join(", ")}`);
-
-  return fetch(url, { ...init, headers });
-}
 
 export type PrinterFarmStatus = {
   ok: boolean;
