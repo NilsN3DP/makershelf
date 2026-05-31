@@ -265,30 +265,32 @@ const SNAPSHOT_INTERVAL_MS = 10_000;
 
 function WebcamPlayer({ printerId, webcamUrl }: { printerId: string; webcamUrl: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [mode, setMode] = useState<"loading" | "webrtc" | "img">("loading");
-  const [imgSrc, setImgSrc] = useState("");
 
   const isRtsp     = webcamUrl.startsWith("rtsp://");
   const isSnapshot = !isRtsp && webcamUrl.startsWith("/");
 
+  // Initialize synchronously from props — the component is keyed by webcamUrl so it
+  // remounts whenever the URL changes, keeping these initializers in sync.
+  const [mode, setMode] = useState<"loading" | "webrtc" | "img">(() =>
+    (isRtsp || isSnapshot) ? "img" : "loading"
+  );
+  const [imgSrc, setImgSrc] = useState(() => {
+    if (isRtsp) return `/api/printer-farm/printers/${printerId}/stream?t=${Date.now()}`;
+    if (isSnapshot) return `${webcamUrl}?t=${Date.now()}`;
+    return "";
+  });
+
   useEffect(() => {
-    if (isRtsp) {
-      // RTSP: use server-side ffmpeg transcoding proxy — always fresh, no caching
-      setImgSrc(`/api/printer-farm/printers/${printerId}/stream?t=${Date.now()}`);
-      setMode("img");
-      return;
-    }
+    if (isRtsp) return; // imgSrc and mode already set by useState initializer
 
     if (isSnapshot) {
+      // imgSrc already initialized; just keep it refreshing every 10 s
       const stamp = () => `${webcamUrl}?t=${Date.now()}`;
-      setImgSrc(stamp());
-      setMode("img");
       const interval = setInterval(() => setImgSrc(stamp()), SNAPSHOT_INTERVAL_MS);
       return () => clearInterval(interval);
     }
 
-    // go2rtc: try WebRTC, fall back to MJPEG img
-    setMode("loading");
+    // go2rtc: try WebRTC, fall back to MJPEG img  (mode already "loading" from useState)
     let cancelled = false;
     let ws: WebSocket | null = null;
     let pc: RTCPeerConnection | null = null;
@@ -1189,7 +1191,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
               <button type="button" className="btn btn-ghost btn-sm" onClick={onStatusRefresh}><IconRefresh /></button>
             </div>
 
-            {printer.webcamUrl && <WebcamPlayer printerId={printer.id} webcamUrl={printer.webcamUrl} />}
+            {printer.webcamUrl && <WebcamPlayer key={printer.webcamUrl} printerId={printer.id} webcamUrl={printer.webcamUrl} />}
 
             {status?.connected && status.state?.toLowerCase() === "printing" && status.progress != null && (
               <div style={{ marginBottom: "14px" }}>
