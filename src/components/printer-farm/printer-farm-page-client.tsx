@@ -223,10 +223,36 @@ function IconStop() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>;
 }
 
+// ─── Webcam helpers ───────────────────────────────────────────────────────────
+
+// Build a go2rtc stream URL from a base cam URL.
+// If webcamUrl already has a stream/image path it is returned as-is.
+// Otherwise: {proto}://{host}/api/{frame.jpeg|stream.mjpeg}?src={name}
+// Stream name priority: ?src= query param → last pathname segment → "camera"
+function buildCamUrl(webcamUrl: string, type: "mjpeg" | "frame"): string {
+  try {
+    const u = new URL(webcamUrl);
+    const already =
+      u.pathname.length > 1 &&
+      (u.pathname.includes("mjpeg") ||
+        u.pathname.includes("frame") ||
+        /\.(jpg|jpeg|png)$/i.test(u.pathname));
+    if (already) return webcamUrl;
+    const streamName =
+      u.searchParams.get("src") ??
+      u.pathname.split("/").filter(Boolean).at(-1) ??
+      "camera";
+    const path = type === "frame" ? "frame.jpeg" : "stream.mjpeg";
+    return `${u.protocol}//${u.host}/api/${path}?src=${encodeURIComponent(streamName)}`;
+  } catch {
+    return webcamUrl;
+  }
+}
+
 // ─── Webcam Player ────────────────────────────────────────────────────────────
 // Tries go2rtc WebRTC via WebSocket signaling first; falls back to <img> for
-// plain MJPEG/snapshot streams. No STUN needed on LAN, no auth needed for
-// direct go2rtc access. Stream name: ?src= param > last path segment > "camera".
+// MJPEG streams (img tags bypass CORS, so direct LAN access works fine).
+// Stream name: ?src= param > last path segment > "camera".
 
 function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -317,7 +343,7 @@ function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
       />
       {mode === "img" && (
         <img
-          src={webcamUrl}
+          src={buildCamUrl(webcamUrl, "mjpeg")}
           alt="Webcam"
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
           onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0.3"; }}
@@ -1419,7 +1445,7 @@ function PrinterCard({ printer, status, lang, onSelect, planSummary }: {
 
       {printer.webcamUrl && (
         <div style={{ borderRadius: "6px", overflow: "hidden", background: "#000", aspectRatio: "16/9" }}>
-          <img src={printer.webcamUrl} alt="cam" style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          <img src={buildCamUrl(printer.webcamUrl, "frame")} alt="cam" style={{ width: "100%", height: "100%", objectFit: "contain" }}
             onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
         </div>
       )}
