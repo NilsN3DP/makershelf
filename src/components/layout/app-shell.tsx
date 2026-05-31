@@ -11,6 +11,10 @@ import { DebugConsole } from "@/src/components/layout/debug-console";
 import { Navigation } from "@/src/components/layout/navigation";
 import { useMakershelf } from "@/src/components/providers/makershelf-provider";
 import { isPublicShellRoute } from "@/src/lib/app-shell-route-core";
+import {
+  isSecuritySetupPage as isSecuritySetupPageCore,
+  shouldRequireSecuritySetup,
+} from "@/src/lib/auth-security-core";
 import { APP_EVENTS } from "@/src/lib/events";
 import { text } from "@/src/lib/locale";
 import { getRuntimeConfig } from "@/src/lib/runtime-config";
@@ -148,20 +152,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     !systemState.authenticated &&
     !isPublicRoute;
 
-  const showSecurityGate =
-    !systemState.loading &&
-    systemState.authenticated &&
-    !systemState.bootstrapRequired &&
-    pathname !== "/user" &&
-    !isPublicRoute &&
-    !demoMode &&
-    (Boolean(systemState.user?.forcePasswordChange) || !systemState.user?.twoFactorEnabled);
+  const showSecurityGate = shouldRequireSecuritySetup({
+    loading: systemState.loading,
+    authenticated: systemState.authenticated,
+    bootstrapRequired: systemState.bootstrapRequired,
+    isPublicRoute,
+    demoMode,
+    pathname,
+    forcePasswordChange: Boolean(systemState.user?.forcePasswordChange),
+    twoFactorEnabled: Boolean(systemState.user?.twoFactorEnabled),
+  });
 
-  const isSecuritySetupPage =
-    pathname === "/user" &&
-    systemState.authenticated &&
-    !demoMode &&
-    (Boolean(systemState.user?.forcePasswordChange) || !systemState.user?.twoFactorEnabled);
+  const isSecuritySetupPage = isSecuritySetupPageCore({
+    pathname,
+    authenticated: systemState.authenticated,
+    demoMode,
+    forcePasswordChange: Boolean(systemState.user?.forcePasswordChange),
+    twoFactorEnabled: Boolean(systemState.user?.twoFactorEnabled),
+  });
   const isSetupPage = isPublicRoute || isSecuritySetupPage;
   const showNavigation =
     ready &&
@@ -218,9 +226,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {text(settings.language, "Sicherheits-Setup erforderlich", "Security setup required")}
               </h1>
               <p style={{ fontSize: "14px", color: "var(--text-muted)", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                {systemState.user?.forcePasswordChange
-                  ? text(settings.language, "Bitte lege zuerst dein persönliches Passwort fest und aktiviere danach 2FA.", "Please set your personal password first and then enable 2FA.")
-                  : text(settings.language, "Bitte aktiviere 2FA, bevor du die App nutzt.", "Please enable 2FA before using the app.")}
+                {text(settings.language, "Bitte lege zuerst dein persönliches Passwort fest. 2FA kannst du danach optional im Benutzerprofil aktivieren.", "Please set your personal password first. You can enable 2FA optionally in your user profile afterwards.")}
               </p>
               <Link href="/user" className="btn btn-primary">
                 {text(settings.language, "Sicherheits-Setup öffnen", "Open security setup")}

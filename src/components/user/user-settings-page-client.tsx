@@ -166,7 +166,7 @@ export function UserSettingsPageClient() {
   }
 
   const requiresPasswordChange = Boolean(session.user.forcePasswordChange);
-  const requiresTwoFactor = !session.user.twoFactorEnabled;
+  const twoFactorMissing = !session.user.twoFactorEnabled;
 
   return (
     <div>
@@ -183,17 +183,28 @@ export function UserSettingsPageClient() {
         </div>
       </div>
 
-      {(requiresPasswordChange || requiresTwoFactor) && (
+      {requiresPasswordChange && (
         <section className="panel panel-padded" style={{ marginBottom: "1.25rem", borderLeft: "3px solid var(--primary)" }}>
           <h2 className="panel-title">
             {text(settings.language, "Pflichtschritt vor der Nutzung", "Required step before use")}
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            {requiresPasswordChange && requiresTwoFactor
-              ? text(settings.language, "Bitte ändere zuerst dein Startpasswort und aktiviere anschließend 2FA per QR-Code.", "Please change your starter password first and then enable 2FA with the QR code.")
-              : requiresPasswordChange
-                ? text(settings.language, "Bitte ändere dein Startpasswort, bevor du weiterarbeitest.", "Please change your starter password before continuing.")
-                : text(settings.language, "Bitte aktiviere 2FA per QR-Code, bevor du weiterarbeitest.", "Please enable 2FA with the QR code before continuing.")}
+            {text(settings.language, "Bitte ändere dein Startpasswort, bevor du weiterarbeitest. 2FA kannst du danach optional aktivieren.", "Please change your starter password before continuing. You can enable 2FA optionally afterwards.")}
+          </p>
+        </section>
+      )}
+
+      {twoFactorMissing && (
+        <section className="panel panel-padded" style={{ marginBottom: "1.25rem", borderLeft: "3px solid var(--warning)" }}>
+          <h2 className="panel-title">
+            {text(settings.language, "2FA ist optional", "2FA is optional")}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            {text(
+              settings.language,
+              "Wenn du makershelf offen im Internet bereitstellst, raten wir dringend davon ab, ohne 2FA zu arbeiten. Aktiviert wird 2FA erst nach einem erfolgreichen Code-Test.",
+              "If you expose makershelf to the internet, we strongly advise against running it without 2FA. 2FA is only enabled after a successful code verification.",
+            )}
           </p>
         </section>
       )}
@@ -343,8 +354,8 @@ export function UserSettingsPageClient() {
                 ? text(settings.language, "2FA ist bereits aktiv.", "2FA is already active.")
                 : text(
                     settings.language,
-                    "Richte 2FA mit einer Authenticator-App ein.",
-                    "Set up 2FA with an authenticator app.",
+                    "Optional: Richte 2FA mit einer Authenticator-App ein. Bei öffentlich erreichbaren Servern dringend empfohlen.",
+                    "Optional: Set up 2FA with an authenticator app. Strongly recommended for public servers.",
                   )}
             </p>
           </div>
