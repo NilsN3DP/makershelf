@@ -115,15 +115,15 @@ type DiscoveredPrinter = {
 };
 
 const MAINTENANCE_TYPES = [
-  { id: "cleaning", de: "Reinigung", en: "Cleaning", emoji: "🧹" },
-  { id: "filament_change", de: "Filamentwechsel", en: "Filament Change", emoji: "🔄" },
-  { id: "calibration", de: "Kalibrierung", en: "Calibration", emoji: "📐" },
-  { id: "nozzle_change", de: "Düsenwechsel", en: "Nozzle Change", emoji: "🔩" },
-  { id: "bed_leveling", de: "Bett-Leveling", en: "Bed Leveling", emoji: "⬜" },
-  { id: "lubrication", de: "Schmierung", en: "Lubrication", emoji: "🛢️" },
-  { id: "firmware_update", de: "Firmware-Update", en: "Firmware Update", emoji: "💾" },
-  { id: "repair", de: "Reparatur", en: "Repair", emoji: "🔧" },
-  { id: "other", de: "Sonstiges", en: "Other", emoji: "📝" },
+  { id: "cleaning", de: "Reinigung", en: "Cleaning" },
+  { id: "filament_change", de: "Filamentwechsel", en: "Filament Change" },
+  { id: "calibration", de: "Kalibrierung", en: "Calibration" },
+  { id: "nozzle_change", de: "Düsenwechsel", en: "Nozzle Change" },
+  { id: "bed_leveling", de: "Bett-Leveling", en: "Bed Leveling" },
+  { id: "lubrication", de: "Schmierung", en: "Lubrication" },
+  { id: "firmware_update", de: "Firmware-Update", en: "Firmware Update" },
+  { id: "repair", de: "Reparatur", en: "Repair" },
+  { id: "other", de: "Sonstiges", en: "Other" },
 ] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ function stateLabel(state: string | null, connected: boolean, lang: Language): s
 function maintenanceLabel(type: string, lang: Language): string {
   const t = MAINTENANCE_TYPES.find((m) => m.id === type);
   if (!t) return type;
-  return `${t.emoji} ${text(lang, t.de, t.en)}`;
+  return text(lang, t.de, t.en);
 }
 
 function relativeDate(iso: string, lang: Language): string {
@@ -704,7 +704,6 @@ function DiscoveryModal({ lang, onClose, onAdded }: {
           </div>
         ) : scanError && printers.length === 0 ? (
           <div style={{ textAlign: "center", padding: "28px 20px" }}>
-            <p style={{ fontSize: "28px", marginBottom: "10px" }}>⚠️</p>
             <p style={{ fontWeight: 600, marginBottom: "6px" }}>{text(lang, "Scan-Fehler", "Scan error")}</p>
             <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>{scanError}</p>
           </div>
@@ -829,7 +828,7 @@ function PlanModal({ lang, plan, printerId, onClose, onSaved }: {
           <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{text(lang, "Typ", "Type")}</label>
           <select className="input" style={{ width: "100%" }} value={planType} onChange={(e) => setPlanType(e.target.value)}>
             {MAINTENANCE_TYPES.map((m) => (
-              <option key={m.id} value={m.id}>{m.emoji} {text(lang, m.de, m.en)}</option>
+              <option key={m.id} value={m.id}>{text(lang, m.de, m.en)}</option>
             ))}
           </select>
         </div>
@@ -1124,8 +1123,8 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                   <div style={{ height: "100%", borderRadius: "3px", background: "var(--primary)", width: `${status.progress}%`, transition: "width 0.5s" }} />
                 </div>
                 <div style={{ display: "flex", gap: "16px", marginTop: "6px" }}>
-                  {status.timePrintingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>⏱ {fmtTime(status.timePrintingS)}</span>}
-                  {status.timeRemainingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🏁 {text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</span>}
+                  {status.timePrintingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>{fmtTime(status.timePrintingS)}</span>}
+                  {status.timeRemainingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>{text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</span>}
                 </div>
               </div>
             )}
@@ -1133,11 +1132,11 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
             {status?.connected && (status.nozzleTempC != null || status.bedTempC != null) && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
                 <div className="panel" style={{ padding: "12px 14px", textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>🌡️ {text(lang, "Düse", "Nozzle")}</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>Head</p>
                   <p style={{ fontSize: "18px", fontWeight: 700 }}>{fmtTemp(status.nozzleTempC)}</p>
                 </div>
                 <div className="panel" style={{ padding: "12px 14px", textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>🔥 {text(lang, "Bett", "Bed")}</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>Bed</p>
                   <p style={{ fontSize: "18px", fontWeight: 700 }}>{fmtTemp(status.bedTempC)}</p>
                 </div>
               </div>
@@ -1236,7 +1235,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{text(lang, "Typ", "Type")}</label>
                 <select className="input" style={{ width: "100%" }} value={maintType} onChange={(e) => setMaintType(e.target.value)}>
                   {MAINTENANCE_TYPES.map((m) => (
-                    <option key={m.id} value={m.id}>{m.emoji} {text(lang, m.de, m.en)}</option>
+                    <option key={m.id} value={m.id}>{text(lang, m.de, m.en)}</option>
                   ))}
                 </select>
               </div>
@@ -1354,7 +1353,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
                         <span style={{ fontWeight: 700, fontSize: "14px" }}>{log.gramsUsed.toFixed(1)} g</span>
-                        {log.spoolId && <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "20px", background: "color-mix(in srgb, var(--primary) 15%, var(--panel))", color: "var(--primary)" }}>🔗 Vault</span>}
+                        {log.spoolId && <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "20px", background: "color-mix(in srgb, var(--primary) 15%, var(--panel))", color: "var(--primary)" }}>Vault</span>}
                       </div>
                       {log.jobName && <p style={{ fontSize: "12.5px", fontWeight: 600 }}>{log.jobName}</p>}
                       <p style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
@@ -1438,7 +1437,7 @@ function PrinterCard({ printer, status, lang, onSelect, planSummary }: {
             <div style={{ height: "100%", borderRadius: "2px", background: "var(--primary)", width: `${status.progress}%` }} />
           </div>
           {status.timeRemainingS != null && (
-            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "3px" }}>🏁 {text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</p>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "3px" }}>{text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</p>
           )}
         </div>
       )}
@@ -1452,8 +1451,8 @@ function PrinterCard({ printer, status, lang, onSelect, planSummary }: {
 
       {status?.connected && (status.nozzleTempC != null || status.bedTempC != null) && (
         <div style={{ display: "flex", gap: "12px" }}>
-          {status.nozzleTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🌡️ {Math.round(status.nozzleTempC)}°C</span>}
-          {status.bedTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🔥 {Math.round(status.bedTempC)}°C</span>}
+          {status.nozzleTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>Head: {Math.round(status.nozzleTempC)}°C</span>}
+          {status.bedTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>Bed: {Math.round(status.bedTempC)}°C</span>}
         </div>
       )}
 
@@ -1618,7 +1617,7 @@ export function PrinterFarmPageClient() {
         if (overduePlans.length === 0 || dismissedOverdueBanner) return null;
         return (
           <div style={{ background: "color-mix(in srgb, var(--danger) 12%, var(--panel))", border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "18px" }}>⚠️</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
             <p style={{ flex: 1, fontSize: "13.5px", color: "var(--danger)", fontWeight: 600, margin: 0 }}>
               {overduePlans.length === 1
                 ? text(lang, `Wartung überfällig: ${overduePlans[0].printer.name} – ${overduePlans[0].label || maintenanceLabel(overduePlans[0].type, lang)}`, `Maintenance overdue: ${overduePlans[0].printer.name} – ${overduePlans[0].label || maintenanceLabel(overduePlans[0].type, lang)}`)
@@ -1667,7 +1666,7 @@ export function PrinterFarmPageClient() {
               <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalGrams >= 1000 ? `${(farmStats.totalGrams / 1000).toFixed(2)} kg` : `${Math.round(farmStats.totalGrams)} g`}</p>
             </div>
             <div>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>📋 {text(lang, "Einträge", "Log entries")}</p>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>{text(lang, "Einträge", "Log entries")}</p>
               <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalEntries}</p>
             </div>
           </div>
@@ -1675,7 +1674,7 @@ export function PrinterFarmPageClient() {
           {/* Per-printer top-3 */}
           {farmStats.perPrinter.length > 0 && (
             <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>🖨️ {text(lang, "Verbrauch je Drucker", "Usage per printer")}</p>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>{text(lang, "Verbrauch je Drucker", "Usage per printer")}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                 {farmStats.perPrinter.slice(0, 4).map((p) => {
                   const pct = farmStats.totalGrams > 0 ? (p.totalGrams / farmStats.totalGrams) * 100 : 0;
@@ -1745,7 +1744,6 @@ export function PrinterFarmPageClient() {
         <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>{text(lang, "Lädt…", "Loading…")}</p>
       ) : visiblePrinters.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px" }}>
-          <p style={{ fontSize: "36px", marginBottom: "12px" }}>🖨️</p>
           <p style={{ fontWeight: 600, marginBottom: "6px" }}>{text(lang, "Noch keine Drucker", "No printers yet")}</p>
           <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "20px" }}>
             {text(lang, "Füge deinen ersten Drucker hinzu um Status, Wartung und Verbrauch zu tracken.", "Add your first printer to track status, maintenance and usage.")}
