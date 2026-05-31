@@ -97,6 +97,14 @@ type FilamentSpool = {
 
 type ActiveDetail = "status" | "maintenance" | "filament";
 
+type FarmStats = {
+  totalGrams: number;
+  totalEntries: number;
+  perPrinter: { id: string; name: string; model: string | null; totalGrams: number; entries: number }[];
+  perMaterial: { material: string; totalGrams: number; entries: number }[];
+  monthly: { month: string; totalGrams: number }[];
+};
+
 type DiscoveredPrinter = {
   name: string;
   host: string;
@@ -107,15 +115,15 @@ type DiscoveredPrinter = {
 };
 
 const MAINTENANCE_TYPES = [
-  { id: "cleaning", de: "Reinigung", en: "Cleaning", emoji: "🧹" },
-  { id: "filament_change", de: "Filamentwechsel", en: "Filament Change", emoji: "🔄" },
-  { id: "calibration", de: "Kalibrierung", en: "Calibration", emoji: "📐" },
-  { id: "nozzle_change", de: "Düsenwechsel", en: "Nozzle Change", emoji: "🔩" },
-  { id: "bed_leveling", de: "Bett-Leveling", en: "Bed Leveling", emoji: "⬜" },
-  { id: "lubrication", de: "Schmierung", en: "Lubrication", emoji: "🛢️" },
-  { id: "firmware_update", de: "Firmware-Update", en: "Firmware Update", emoji: "💾" },
-  { id: "repair", de: "Reparatur", en: "Repair", emoji: "🔧" },
-  { id: "other", de: "Sonstiges", en: "Other", emoji: "📝" },
+  { id: "cleaning", de: "Reinigung", en: "Cleaning" },
+  { id: "filament_change", de: "Filamentwechsel", en: "Filament Change" },
+  { id: "calibration", de: "Kalibrierung", en: "Calibration" },
+  { id: "nozzle_change", de: "Düsenwechsel", en: "Nozzle Change" },
+  { id: "bed_leveling", de: "Bett-Leveling", en: "Bed Leveling" },
+  { id: "lubrication", de: "Schmierung", en: "Lubrication" },
+  { id: "firmware_update", de: "Firmware-Update", en: "Firmware Update" },
+  { id: "repair", de: "Reparatur", en: "Repair" },
+  { id: "other", de: "Sonstiges", en: "Other" },
 ] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -164,7 +172,7 @@ function stateLabel(state: string | null, connected: boolean, lang: Language): s
 function maintenanceLabel(type: string, lang: Language): string {
   const t = MAINTENANCE_TYPES.find((m) => m.id === type);
   if (!t) return type;
-  return `${t.emoji} ${text(lang, t.de, t.en)}`;
+  return text(lang, t.de, t.en);
 }
 
 function relativeDate(iso: string, lang: Language): string {
@@ -213,6 +221,141 @@ function IconPlay() {
 }
 function IconStop() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>;
+}
+
+// ─── Webcam helpers ───────────────────────────────────────────────────────────
+
+// Build a go2rtc stream URL from a base cam URL.
+// If webcamUrl already has a stream/image path it is returned as-is.
+// Otherwise: {proto}://{host}/api/{frame.jpeg|stream.mjpeg}?src={name}
+// Stream name priority: ?src= query param → last pathname segment → "camera"
+function buildCamUrl(webcamUrl: string, type: "mjpeg" | "frame"): string {
+  try {
+    const u = new URL(webcamUrl);
+    const already =
+      u.pathname.length > 1 &&
+      (u.pathname.includes("mjpeg") ||
+        u.pathname.includes("frame") ||
+        /\.(jpg|jpeg|png)$/i.test(u.pathname));
+    if (already) return webcamUrl;
+    const streamName =
+      u.searchParams.get("src") ??
+      u.pathname.split("/").filter(Boolean).at(-1) ??
+      "camera";
+    const path = type === "frame" ? "frame.jpeg" : "stream.mjpeg";
+    return `${u.protocol}//${u.host}/api/${path}?src=${encodeURIComponent(streamName)}`;
+  } catch {
+    return webcamUrl;
+  }
+}
+
+// ─── Webcam Player ────────────────────────────────────────────────────────────
+// Tries go2rtc WebRTC via WebSocket signaling first; falls back to <img> for
+// MJPEG streams (img tags bypass CORS, so direct LAN access works fine).
+// Stream name: ?src= param > last path segment > "camera".
+
+function WebcamPlayer({ webcamUrl }: { webcamUrl: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [mode, setMode] = useState<"loading" | "webrtc" | "img">("loading");
+
+  useEffect(() => {
+    setMode("loading");
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    let pc: RTCPeerConnection | null = null;
+
+    const connect = async () => {
+      try {
+        const u = new URL(webcamUrl);
+        const srcParam = u.searchParams.get("src");
+        const pathSegment = u.pathname.split("/").filter(Boolean).at(-1);
+        const streamName = srcParam ?? pathSegment ?? "camera";
+        const wsProto = u.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProto}//${u.host}/api/ws?src=${encodeURIComponent(streamName)}`;
+
+        // Open WebSocket — 4-second timeout to decide if go2rtc is available
+        await new Promise<void>((resolve, reject) => {
+          const socket = new WebSocket(wsUrl);
+          ws = socket;
+          const timer = setTimeout(() => { socket.close(); reject(new Error("timeout")); }, 4000);
+          socket.onopen = () => { clearTimeout(timer); resolve(); };
+          socket.onerror = () => { clearTimeout(timer); reject(new Error("ws error")); };
+        });
+
+        if (cancelled) return;
+
+        pc = new RTCPeerConnection({ iceServers: [] });
+        pc.addTransceiver("video", { direction: "recvonly" });
+
+        pc.ontrack = (evt) => {
+          if (cancelled) return;
+          if (videoRef.current) videoRef.current.srcObject = evt.streams[0];
+          setMode("webrtc");
+        };
+
+        pc.onicecandidate = (evt) => {
+          if (evt.candidate && ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "webrtc/candidate", value: evt.candidate.candidate }));
+          }
+        };
+
+        // ws is guaranteed non-null here: the Promise above resolves only on onopen
+        const wsRef = ws as WebSocket;
+        wsRef.onmessage = async (evt) => {
+          if (cancelled || !pc) return;
+          try {
+            const msg = JSON.parse(evt.data as string) as { type: string; value: string };
+            if (msg.type === "webrtc/answer") {
+              await pc.setRemoteDescription({ type: "answer", sdp: msg.value });
+            } else if (msg.type === "webrtc/candidate") {
+              await pc.addIceCandidate({ candidate: msg.value, sdpMid: "0" });
+            }
+          } catch { /* ignore malformed messages */ }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        wsRef.send(JSON.stringify({ type: "webrtc/offer", value: offer.sdp }));
+
+      } catch {
+        if (!cancelled) setMode("img");
+      }
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      ws?.close();
+      pc?.close();
+    };
+  }, [webcamUrl]);
+
+  return (
+    <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9", position: "relative" }}>
+      {/* Video always in DOM so videoRef.current is available when ontrack fires */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "100%", height: "100%", objectFit: "contain", display: mode === "webrtc" ? "block" : "none" }}
+      />
+      {mode === "img" && (
+        <img
+          src={buildCamUrl(webcamUrl, "mjpeg")}
+          alt="Webcam"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0.3"; }}
+        />
+      )}
+      {mode === "loading" && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: "22px", height: "22px", border: "2.5px solid rgba(255,255,255,0.15)", borderTopColor: "rgba(255,255,255,0.7)", borderRadius: "50%", animation: "pf-spin 0.75s linear infinite" }} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Control Button ───────────────────────────────────────────────────────────
@@ -268,6 +411,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
   const [location, setLocation] = useState(printer?.location ?? "");
   const [groupId, setGroupId] = useState(printer?.groupId ?? "");
   const [isDummy, setIsDummy] = useState(printer?.isDummy ?? false);
+  const [active, setActive] = useState(printer?.active ?? true);
   const [apiType, setApiType] = useState<ApiType>(printer?.apiType ?? "prusa-link");
   const [apiUrl, setApiUrl] = useState(printer?.apiUrl ?? "");
   const [apiKey, setApiKey] = useState(printer?.apiKey ?? "");
@@ -284,7 +428,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
     const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const body = {
       name: name.trim(), model: model.trim() || null, location: location.trim() || null,
-      groupId: groupId || null, isDummy, apiType, apiUrl: isDummy ? "" : apiUrl.trim(),
+      groupId: groupId || null, isDummy, active, apiType, apiUrl: isDummy ? "" : apiUrl.trim(),
       apiKey: apiKey.trim() || null, webcamUrl: webcamUrl.trim() || null,
       tags, notes: notes.trim(),
     };
@@ -347,6 +491,19 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
           </div>
         </label>
 
+        {/* Active toggle */}
+        <label style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", background: !active ? "color-mix(in srgb, var(--danger) 8%, var(--panel-muted))" : "var(--panel-muted)", borderRadius: "8px", cursor: "pointer", border: `1px solid ${!active ? "color-mix(in srgb, var(--danger) 30%, transparent)" : "transparent"}` }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-main)", margin: 0 }}>
+              {text(lang, "Aktiv (Status-Polling)", "Active (status polling)")}
+            </p>
+            <p style={{ fontSize: "11.5px", color: "var(--text-muted)", margin: "2px 0 0" }}>
+              {text(lang, "Deaktiviert = kein automatischer Status-Abruf", "Unchecked = no automatic status polling")}
+            </p>
+          </div>
+        </label>
+
         {!isDummy && (
           <>
             <div>
@@ -363,7 +520,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
             {([
               { label: "API URL *", value: apiUrl, set: setApiUrl, placeholder: "http://192.168.1.100", type: "url" },
               { label: "API Key", value: apiKey, set: setApiKey, placeholder: text(lang, "Leer lassen wenn nicht benötigt", "Leave empty if not needed"), type: "password" },
-              { label: text(lang, "Webcam URL", "Webcam URL"), value: webcamUrl, set: setWebcamUrl, placeholder: "http://192.168.1.100/webcam", type: "url" },
+              { label: text(lang, "Webcam URL", "Webcam URL"), value: webcamUrl, set: setWebcamUrl, placeholder: "http://192.168.1.144:1984  (go2rtc / WebRTC)", type: "text" },
             ] as const).map(({ label, value, set, placeholder, type }) => (
               <div key={label}>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{label}</label>
@@ -547,7 +704,6 @@ function DiscoveryModal({ lang, onClose, onAdded }: {
           </div>
         ) : scanError && printers.length === 0 ? (
           <div style={{ textAlign: "center", padding: "28px 20px" }}>
-            <p style={{ fontSize: "28px", marginBottom: "10px" }}>⚠️</p>
             <p style={{ fontWeight: 600, marginBottom: "6px" }}>{text(lang, "Scan-Fehler", "Scan error")}</p>
             <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>{scanError}</p>
           </div>
@@ -672,7 +828,7 @@ function PlanModal({ lang, plan, printerId, onClose, onSaved }: {
           <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{text(lang, "Typ", "Type")}</label>
           <select className="input" style={{ width: "100%" }} value={planType} onChange={(e) => setPlanType(e.target.value)}>
             {MAINTENANCE_TYPES.map((m) => (
-              <option key={m.id} value={m.id}>{m.emoji} {text(lang, m.de, m.en)}</option>
+              <option key={m.id} value={m.id}>{text(lang, m.de, m.en)}</option>
             ))}
           </select>
         </div>
@@ -718,7 +874,7 @@ function PlanModal({ lang, plan, printerId, onClose, onSaved }: {
 
 type WorkspacePlanEntry = MaintenancePlan & { printer: { id: string; name: string; model: string | null; isDummy: boolean }; daysUntilDue: number | null };
 
-function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRefresh, onPlansChanged, workspacePlans }: {
+function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRefresh, onPlansChanged, onFilamentChanged, workspacePlans }: {
   lang: Language;
   printer: Printer;
   status: PrinterStatus | null;
@@ -726,6 +882,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
   onEdit: () => void;
   onStatusRefresh: () => void;
   onPlansChanged: () => void;
+  onFilamentChanged: () => void;
   workspacePlans: WorkspacePlanEntry[];
 }) {
   const [activeTab, setActiveTab] = useState<ActiveDetail>("status");
@@ -853,12 +1010,14 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
     });
     setGrams(""); setJobName(""); setFilNotes(""); setSpoolId("");
     await fetchFilamentLogs();
+    onFilamentChanged();
     setSavingFil(false);
   }
 
   async function deleteFilamentLog(logId: string) {
     await fetch(`/api/printer-farm/printers/${printer.id}/filament-log?logId=${logId}`, { method: "DELETE" });
     setFilamentLogs((prev) => prev.filter((l) => l.id !== logId));
+    onFilamentChanged();
   }
 
   async function scanNfc() {
@@ -952,11 +1111,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
               <button type="button" className="btn btn-ghost btn-sm" onClick={onStatusRefresh}><IconRefresh /></button>
             </div>
 
-            {printer.webcamUrl && (
-              <div style={{ marginBottom: "16px", borderRadius: "8px", overflow: "hidden", background: "#000", aspectRatio: "16/9" }}>
-                <img src={printer.webcamUrl} alt="Webcam" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              </div>
-            )}
+            {printer.webcamUrl && <WebcamPlayer webcamUrl={printer.webcamUrl} />}
 
             {status?.connected && status.state?.toLowerCase() === "printing" && status.progress != null && (
               <div style={{ marginBottom: "14px" }}>
@@ -968,8 +1123,8 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                   <div style={{ height: "100%", borderRadius: "3px", background: "var(--primary)", width: `${status.progress}%`, transition: "width 0.5s" }} />
                 </div>
                 <div style={{ display: "flex", gap: "16px", marginTop: "6px" }}>
-                  {status.timePrintingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>⏱ {fmtTime(status.timePrintingS)}</span>}
-                  {status.timeRemainingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🏁 {text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</span>}
+                  {status.timePrintingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>{fmtTime(status.timePrintingS)}</span>}
+                  {status.timeRemainingS != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>{text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</span>}
                 </div>
               </div>
             )}
@@ -977,11 +1132,11 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
             {status?.connected && (status.nozzleTempC != null || status.bedTempC != null) && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
                 <div className="panel" style={{ padding: "12px 14px", textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>🌡️ {text(lang, "Düse", "Nozzle")}</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>Head</p>
                   <p style={{ fontSize: "18px", fontWeight: 700 }}>{fmtTemp(status.nozzleTempC)}</p>
                 </div>
                 <div className="panel" style={{ padding: "12px 14px", textAlign: "center" }}>
-                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>🔥 {text(lang, "Bett", "Bed")}</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "3px" }}>Bed</p>
                   <p style={{ fontSize: "18px", fontWeight: 700 }}>{fmtTemp(status.bedTempC)}</p>
                 </div>
               </div>
@@ -1080,7 +1235,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "5px" }}>{text(lang, "Typ", "Type")}</label>
                 <select className="input" style={{ width: "100%" }} value={maintType} onChange={(e) => setMaintType(e.target.value)}>
                   {MAINTENANCE_TYPES.map((m) => (
-                    <option key={m.id} value={m.id}>{m.emoji} {text(lang, m.de, m.en)}</option>
+                    <option key={m.id} value={m.id}>{text(lang, m.de, m.en)}</option>
                   ))}
                 </select>
               </div>
@@ -1198,7 +1353,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
                         <span style={{ fontWeight: 700, fontSize: "14px" }}>{log.gramsUsed.toFixed(1)} g</span>
-                        {log.spoolId && <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "20px", background: "color-mix(in srgb, var(--primary) 15%, var(--panel))", color: "var(--primary)" }}>🔗 Vault</span>}
+                        {log.spoolId && <span style={{ fontSize: "11px", padding: "1px 6px", borderRadius: "20px", background: "color-mix(in srgb, var(--primary) 15%, var(--panel))", color: "var(--primary)" }}>Vault</span>}
                       </div>
                       {log.jobName && <p style={{ fontSize: "12.5px", fontWeight: 600 }}>{log.jobName}</p>}
                       <p style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
@@ -1282,22 +1437,22 @@ function PrinterCard({ printer, status, lang, onSelect, planSummary }: {
             <div style={{ height: "100%", borderRadius: "2px", background: "var(--primary)", width: `${status.progress}%` }} />
           </div>
           {status.timeRemainingS != null && (
-            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "3px" }}>🏁 {text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</p>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "3px" }}>{text(lang, "Noch", "Rem.")} {fmtTime(status.timeRemainingS)}</p>
           )}
         </div>
       )}
 
       {printer.webcamUrl && (
         <div style={{ borderRadius: "6px", overflow: "hidden", background: "#000", aspectRatio: "16/9" }}>
-          <img src={printer.webcamUrl} alt="cam" style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          <img src={buildCamUrl(printer.webcamUrl, "frame")} alt="cam" style={{ width: "100%", height: "100%", objectFit: "contain" }}
             onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none"; }} />
         </div>
       )}
 
       {status?.connected && (status.nozzleTempC != null || status.bedTempC != null) && (
         <div style={{ display: "flex", gap: "12px" }}>
-          {status.nozzleTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🌡️ {Math.round(status.nozzleTempC)}°C</span>}
-          {status.bedTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>🔥 {Math.round(status.bedTempC)}°C</span>}
+          {status.nozzleTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>Head: {Math.round(status.nozzleTempC)}°C</span>}
+          {status.bedTempC != null && <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>Bed: {Math.round(status.bedTempC)}°C</span>}
         </div>
       )}
 
@@ -1331,6 +1486,7 @@ export function PrinterFarmPageClient() {
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [workspacePlans, setWorkspacePlans] = useState<WorkspacePlanEntry[]>([]);
+  const [farmStats, setFarmStats] = useState<FarmStats | null>(null);
   const [dismissedOverdueBanner, setDismissedOverdueBanner] = useState(false);
 
   const inFlight = useRef<Set<string>>(new Set());
@@ -1358,6 +1514,11 @@ export function PrinterFarmPageClient() {
     }
   }, []);
 
+  const fetchStats = useCallback(async () => {
+    const res = await fetch("/api/printer-farm/stats");
+    if (res.ok) setFarmStats(await res.json() as FarmStats);
+  }, []);
+
   const pollStatus = useCallback(async (printerList: Printer[]) => {
     await Promise.all(printerList.filter((p) => p.active && !p.isDummy).map(async (p) => {
       if (inFlight.current.has(p.id)) return;
@@ -1375,7 +1536,7 @@ export function PrinterFarmPageClient() {
     }));
   }, []);
 
-  useEffect(() => { void fetchAll(); void fetchWorkspacePlans(); }, [fetchAll, fetchWorkspacePlans]);
+  useEffect(() => { void fetchAll(); void fetchWorkspacePlans(); void fetchStats(); }, [fetchAll, fetchWorkspacePlans, fetchStats]);
 
   useEffect(() => {
     if (printers.length === 0) return;
@@ -1456,7 +1617,7 @@ export function PrinterFarmPageClient() {
         if (overduePlans.length === 0 || dismissedOverdueBanner) return null;
         return (
           <div style={{ background: "color-mix(in srgb, var(--danger) 12%, var(--panel))", border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "18px" }}>⚠️</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
             <p style={{ flex: 1, fontSize: "13.5px", color: "var(--danger)", fontWeight: 600, margin: 0 }}>
               {overduePlans.length === 1
                 ? text(lang, `Wartung überfällig: ${overduePlans[0].printer.name} – ${overduePlans[0].label || maintenanceLabel(overduePlans[0].type, lang)}`, `Maintenance overdue: ${overduePlans[0].printer.name} – ${overduePlans[0].label || maintenanceLabel(overduePlans[0].type, lang)}`)
@@ -1473,6 +1634,7 @@ export function PrinterFarmPageClient() {
           <p className="page-subtitle">
             {printers.length} {text(lang, "Drucker", "printers")}
             {printingCount > 0 && ` · ${printingCount} ${text(lang, "drucken gerade", "printing")}`}
+            {farmStats && farmStats.totalGrams > 0 && ` · ${(farmStats.totalGrams / 1000).toFixed(2)} kg ${text(lang, "Filament gesamt", "filament total")}`}
           </p>
         </div>
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -1493,6 +1655,60 @@ export function PrinterFarmPageClient() {
           </button>
         </div>
       </div>
+
+      {/* Filament stats strip */}
+      {farmStats && farmStats.totalEntries > 0 && (
+        <div className="panel" style={{ padding: "14px 18px", marginBottom: "20px", display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "flex-start" }}>
+          {/* Totals */}
+          <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+            <div>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>🧵 {text(lang, "Filament gesamt", "Total filament")}</p>
+              <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalGrams >= 1000 ? `${(farmStats.totalGrams / 1000).toFixed(2)} kg` : `${Math.round(farmStats.totalGrams)} g`}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>{text(lang, "Einträge", "Log entries")}</p>
+              <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalEntries}</p>
+            </div>
+          </div>
+
+          {/* Per-printer top-3 */}
+          {farmStats.perPrinter.length > 0 && (
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>{text(lang, "Verbrauch je Drucker", "Usage per printer")}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                {farmStats.perPrinter.slice(0, 4).map((p) => {
+                  const pct = farmStats.totalGrams > 0 ? (p.totalGrams / farmStats.totalGrams) * 100 : 0;
+                  return (
+                    <div key={p.id}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                        <span style={{ fontSize: "11.5px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>{p.name}</span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{p.totalGrams >= 1000 ? `${(p.totalGrams / 1000).toFixed(2)} kg` : `${Math.round(p.totalGrams)} g`}</span>
+                      </div>
+                      <div style={{ height: "4px", borderRadius: "2px", background: "var(--border)" }}>
+                        <div style={{ height: "100%", borderRadius: "2px", background: "var(--primary)", width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Per-material top-5 */}
+          {farmStats.perMaterial.length > 0 && (
+            <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>🎨 {text(lang, "Materialien", "Materials")}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                {farmStats.perMaterial.slice(0, 6).map((m) => (
+                  <span key={m.material} style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "var(--panel-muted)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {m.material} <strong style={{ color: "var(--text-main)" }}>{m.totalGrams >= 1000 ? `${(m.totalGrams / 1000).toFixed(1)} kg` : `${Math.round(m.totalGrams)} g`}</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Group filter + management */}
       {groups.length > 0 && (
@@ -1528,7 +1744,6 @@ export function PrinterFarmPageClient() {
         <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>{text(lang, "Lädt…", "Loading…")}</p>
       ) : visiblePrinters.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 20px" }}>
-          <p style={{ fontSize: "36px", marginBottom: "12px" }}>🖨️</p>
           <p style={{ fontWeight: 600, marginBottom: "6px" }}>{text(lang, "Noch keine Drucker", "No printers yet")}</p>
           <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "20px" }}>
             {text(lang, "Füge deinen ersten Drucker hinzu um Status, Wartung und Verbrauch zu tracken.", "Add your first printer to track status, maintenance and usage.")}
@@ -1566,6 +1781,7 @@ export function PrinterFarmPageClient() {
           onEdit={() => { setEditingPrinter(detailPrinter); setDetailPrinter(null); setDrawerOpen(true); }}
           onStatusRefresh={() => void pollStatus([detailPrinter])}
           onPlansChanged={() => void fetchWorkspacePlans()}
+          onFilamentChanged={() => void fetchStats()}
           workspacePlans={workspacePlans}
         />
       )}

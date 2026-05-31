@@ -17,8 +17,9 @@ const printerImportSchema = z.array(
     name: z.string().min(1).max(120),
     model: z.string().max(120).optional().nullable(),
     location: z.string().max(120).optional().nullable(),
+    isDummy: z.boolean().default(false),
     apiType: z.enum(["prusa-link", "moonraker", "octoprint"]).default("prusa-link"),
-    apiUrl: z.string().min(1).max(500),
+    apiUrl: z.string().max(500).default(""),
     apiKey: z.string().max(500).optional().nullable(),
     webcamUrl: z.string().max(500).optional().nullable(),
     active: z.boolean().default(true),
@@ -26,7 +27,10 @@ const printerImportSchema = z.array(
     tags: z.array(z.string()).optional().default([]),
     notes: z.string().optional().default(""),
     group: importedGroupSchema,
-  }),
+  }).refine(
+    (d) => d.isDummy || d.apiUrl.trim().length > 0,
+    { message: "apiUrl required for non-dummy printers.", path: ["apiUrl"] },
+  ),
 );
 
 function ensureEnabled(settingsJson: unknown) {
@@ -57,6 +61,7 @@ export async function GET() {
     name: p.name,
     model: p.model,
     location: p.location,
+    isDummy: p.isDummy,
     apiType: p.apiType,
     apiUrl: p.apiUrl,
     apiKey: p.apiKey,
@@ -135,8 +140,9 @@ export async function POST(request: Request) {
           model: entry.model?.trim() || null,
           location: entry.location?.trim() || null,
           groupId,
+          isDummy: entry.isDummy,
           apiType: entry.apiType,
-          apiUrl: entry.apiUrl.trim().replace(/\/$/, ""),
+          apiUrl: entry.isDummy ? "" : entry.apiUrl.trim().replace(/\/$/, ""),
           apiKey: entry.apiKey?.trim() || null,
           webcamUrl: entry.webcamUrl?.trim() || null,
           active: entry.active,

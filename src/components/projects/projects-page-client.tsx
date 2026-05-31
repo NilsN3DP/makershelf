@@ -209,48 +209,43 @@ export function ProjectsPageClient() {
           </button>
         </div>
         {guestSubmissionStatus ? <p className="mt-3 text-sm text-muted">{guestSubmissionStatus}</p> : null}
-        {guestSubmissionLinks.length > 0 ? (
+        {guestSubmissionLinks.some((l) => !l.revokedAt) ? (
           <div className="mt-4 space-y-2">
-            {guestSubmissionLinks.map((link) => {
-              const isRevoked = Boolean(link.revokedAt);
-              return (
-                <div
-                  key={link.id}
-                  className="panel"
-                  style={{ padding: "10px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}
-                >
-                  <div style={{ minWidth: 0, flex: "1 1 360px" }}>
-                    <div className="responsive-actions">
-                      <span className="badge badge-neutral">{link.label}</span>
-                      {isRevoked ? <span className="badge badge-danger">{text(settings.language, "deaktiviert", "revoked")}</span> : <span className="badge badge-success">{text(settings.language, "aktiv", "active")}</span>}
-                    </div>
-                    <input className="input mt-2" readOnly value={link.url} onFocus={(event) => event.currentTarget.select()} />
-                  </div>
+            {guestSubmissionLinks.filter((link) => !link.revokedAt).map((link) => (
+              <div
+                key={link.id}
+                className="panel"
+                style={{ padding: "10px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}
+              >
+                <div style={{ minWidth: 0, flex: "1 1 360px" }}>
                   <div className="responsive-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(link.url);
-                        setGuestSubmissionStatus(text(settings.language, "Gast-Erstellungslink kopiert.", "Guest submission link copied."));
-                      }}
-                    >
-                      {text(settings.language, "Kopieren", "Copy")}
-                    </button>
-                    {!isRevoked ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={isGuestSubmissionBusy}
-                        onClick={() => void handleRevokeGuestSubmissionLink(link.id)}
-                      >
-                        {text(settings.language, "Deaktivieren", "Revoke")}
-                      </button>
-                    ) : null}
+                    <span className="badge badge-neutral">{link.label}</span>
+                    <span className="badge badge-success">{text(settings.language, "aktiv", "active")}</span>
                   </div>
+                  <input className="input mt-2" readOnly value={link.url} onFocus={(event) => event.currentTarget.select()} />
                 </div>
-              );
-            })}
+                <div className="responsive-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(link.url);
+                      setGuestSubmissionStatus(text(settings.language, "Gast-Erstellungslink kopiert.", "Guest submission link copied."));
+                    }}
+                  >
+                    {text(settings.language, "Kopieren", "Copy")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={isGuestSubmissionBusy}
+                    onClick={() => void handleRevokeGuestSubmissionLink(link.id)}
+                  >
+                    {text(settings.language, "Deaktivieren", "Revoke")}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
