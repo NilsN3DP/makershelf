@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { UserRole } from "@prisma/client";
 import { z } from "zod";
 
 import { createUserSession, AUTH_COOKIE_NAME } from "@/src/lib/server/auth/session";
@@ -44,6 +43,7 @@ import { verifyPassword } from "@/src/lib/server/auth/password";
 import { verifyBackupCode, verifyTotpToken } from "@/src/lib/server/auth/totp";
 import { ensureFirstUserAdmin } from "@/src/lib/server/admin-integrity";
 import { authenticateLdapUser, getEffectiveLdapConfig } from "@/src/lib/server/auth/ldap";
+import { shouldRequireTwoFactorOnLogin } from "@/src/lib/auth-security-core";
 import { isDemoModeEnabled } from "@/src/lib/demo-mode-core";
 import { getServerEnv } from "@/src/lib/server/env";
 import { prisma } from "@/src/lib/server/prisma";
@@ -223,11 +223,12 @@ export async function POST(request: Request) {
       })) ?? user;
 
     const demoMode = isDemoModeEnabled(getServerEnv().MAKERSHELF_DEMO_MODE);
-    const requiresTwoFactor =
-      !demoMode &&
-      Boolean(user.twoFactorSecret) &&
-      ((user.twoFactorEnabled && Boolean(user.twoFactorSecret?.verifiedAt)) ||
-        user.role === UserRole.ADMIN);
+    const requiresTwoFactor = shouldRequireTwoFactorOnLogin({
+      demoMode,
+      twoFactorEnabled: user.twoFactorEnabled,
+      twoFactorSecretVerifiedAt: user.twoFactorSecret?.verifiedAt ?? null,
+      role: user.role,
+    });
 
     if (requiresTwoFactor && user.twoFactorSecret) {
       if (!body.token) {

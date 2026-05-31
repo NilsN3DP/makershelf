@@ -1,12 +1,6 @@
 import { UserRole } from "@prisma/client";
 
 import { defaultCategories, defaultCreators, defaultSettings, slugify } from "@/src/lib/makershelf-data";
-import {
-  createBackupCodes,
-  createTotpSecret,
-  encryptTotpSecret,
-  hashBackupCodes,
-} from "@/src/lib/server/auth/totp";
 import { hashPassword } from "@/src/lib/server/auth/password";
 import { getServerEnv } from "@/src/lib/server/env";
 import { prisma } from "@/src/lib/server/prisma";
@@ -30,10 +24,6 @@ export async function bootstrapWorkspaceWithAdmin(input: {
 
   const passwordHash = await hashPassword(input.adminPassword);
   const workspaceSlug = slugify(workspaceName) || "makershelf";
-  const { secret, otpauthUrl } = createTotpSecret(env.MAKERSHELF_APP_NAME, input.adminEmail);
-  const backupCodes = createBackupCodes();
-  const encryptedSecret = encryptTotpSecret(secret);
-  const hashedBackupCodes = hashBackupCodes(backupCodes);
 
   const result = await prisma.$transaction(async (tx) => {
     const workspace = await tx.workspace.create({
@@ -62,7 +52,7 @@ export async function bootstrapWorkspaceWithAdmin(input: {
         passwordHash,
         role: UserRole.ADMIN,
         locale: "de",
-        twoFactorEnabled: true,
+        twoFactorEnabled: false,
       },
     });
 
@@ -73,15 +63,6 @@ export async function bootstrapWorkspaceWithAdmin(input: {
         role: UserRole.ADMIN,
         canUpload: true,
         readOnly: false,
-      },
-    });
-
-    await tx.twoFactorSecret.create({
-      data: {
-        userId: user.id,
-        secret: encryptedSecret,
-        backupCodes: hashedBackupCodes,
-        verifiedAt: new Date(),
       },
     });
 
@@ -153,10 +134,5 @@ export async function bootstrapWorkspaceWithAdmin(input: {
   return {
     workspaceId: result.workspace.id,
     userId: result.user.id,
-    totpSetup: {
-      secret,
-      otpauthUrl,
-      backupCodes,
-    },
   };
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 
 import { useMakershelf } from "@/src/components/providers/makershelf-provider";
@@ -17,28 +16,6 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
 type SetupWizardProps = {
   initialServerStatus?: { bootstrapRequired: boolean };
 };
-
-function downloadBackupCodesFile(codes: string[], label: string) {
-  if (!codes.length) return;
-  const content = [
-    "makershelf Backup Codes",
-    `Account: ${label}`,
-    `Generated: ${new Date().toLocaleString("de-DE")}`,
-    "",
-    ...codes,
-    "",
-    "Store these codes in a safe place.",
-  ].join("\n");
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `makershelf-backup-codes-${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 function StepTrack({ step, total }: { step: number; total: number }) {
   return (
@@ -72,11 +49,7 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [filamentVaultEnabled, setFilamentVaultEnabled] = useState(false);
-  const [bootstrapResult, setBootstrapResult] = useState<{
-    otpauthUrl: string;
-    backupCodes: string[];
-  } | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [setupComplete, setSetupComplete] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -96,24 +69,6 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // Generate QR code when bootstrap result is set
-  useEffect(() => {
-    let cancelled = false;
-    async function buildQr() {
-      if (!bootstrapResult?.otpauthUrl) { setQrDataUrl(""); return; }
-      try {
-        const dataUrl = await QRCode.toDataURL(bootstrapResult.otpauthUrl, {
-          margin: 2, scale: 7, color: { dark: "#0f172a", light: "#ffffff" },
-        });
-        if (!cancelled) setQrDataUrl(dataUrl);
-      } catch {
-        if (!cancelled) setQrDataUrl("");
-      }
-    }
-    void buildQr();
-    return () => { cancelled = true; };
-  }, [bootstrapResult?.otpauthUrl]);
-
   async function handleBootstrap(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -126,12 +81,11 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
       });
       const payload = await readJsonResponse<{
         ok?: boolean; error?: string;
-        totpSetup?: { otpauthUrl: string; backupCodes: string[] };
       }>(response, "Bootstrap fehlgeschlagen.");
-      if (!response.ok || !payload.ok || !payload.totpSetup) {
+      if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Bootstrap fehlgeschlagen.");
       }
-      setBootstrapResult(payload.totpSetup);
+      setSetupComplete(true);
       setBootstrapRequired(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Einrichtung fehlgeschlagen.");
@@ -149,7 +103,7 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
         response, "Zurücksetzen fehlgeschlagen.",
       );
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Zurücksetzen fehlgeschlagen.");
-      setBootstrapResult(null);
+      setSetupComplete(false);
       setBootstrapRequired(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Zurücksetzen fehlgeschlagen.");
@@ -158,8 +112,8 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
     }
   }
 
-  // ── Step 2: 2FA setup ──────────────────────────────────────────────────
-  if (bootstrapResult) {
+  // ── Step 2: Optional 2FA guidance ──────────────────────────────────────
+  if (setupComplete) {
     return (
       <div style={{ minHeight: "100vh", background: "var(--app-bg)", padding: "3rem 2rem", display: "flex", alignItems: "flex-start", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: "560px" }}>
@@ -169,77 +123,39 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
             </p>
             <StepTrack step={2} total={2} />
             <h1 style={{ fontSize: "26px", fontWeight: 800, color: "var(--text-main)", marginBottom: "8px" }}>
-              {text(settings.language, "2FA einrichten", "Set up 2FA")}
+              {text(settings.language, "2FA optional einrichten", "Set up 2FA optionally")}
             </h1>
             <p style={{ color: "var(--text-muted)", fontSize: "14px", lineHeight: 1.6 }}>
               {text(
                 settings.language,
-                "Scanne den QR-Code mit deiner Authenticator-App und sichere die Backup-Codes.",
-                "Scan the QR code with your authenticator app and save the backup codes.",
+                "Dein Admin-Konto wurde erstellt. Du kannst dich jetzt anmelden und 2FA im Benutzerprofil aktivieren.",
+                "Your admin account has been created. You can sign in now and enable 2FA in your user profile.",
               )}
             </p>
           </div>
 
-          <div className="panel" style={{ padding: "1.5rem", marginBottom: "1rem" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "152px 1fr", gap: "1.5rem", alignItems: "start" }}>
-              <div style={{ background: "#fff", borderRadius: "12px", padding: "10px" }}>
-                {qrDataUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={qrDataUrl} alt="2FA QR Code" style={{ width: "100%", borderRadius: "6px", display: "block" }} />
-                ) : (
-                  <div style={{ aspectRatio: "1", background: "var(--panel-muted)", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "var(--text-muted)" }}>
-                    ...
-                  </div>
-                )}
-              </div>
+          <div className="panel" style={{ padding: "1.5rem", marginBottom: "1rem", borderLeft: "3px solid var(--primary)" }}>
+            <div style={{ display: "grid", gap: "12px" }}>
               <div>
-                <p style={{ fontWeight: 600, fontSize: "14px", marginBottom: "6px", color: "var(--text-main)" }}>
-                  {text(settings.language, "Authenticator-App öffnen", "Open authenticator app")}
+                <p style={{ fontWeight: 700, fontSize: "15px", marginBottom: "6px", color: "var(--text-main)" }}>
+                  {text(settings.language, "Empfohlen für öffentliche Instanzen", "Recommended for public instances")}
                 </p>
-                <p style={{ fontSize: "13px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "12px" }}>
+                <p style={{ fontSize: "13.5px", color: "var(--text-muted)", lineHeight: 1.6 }}>
                   {text(
                     settings.language,
-                    "z.B. Google Authenticator, 2FAS, Aegis, Authy oder Microsoft Authenticator.",
-                    "e.g. Google Authenticator, 2FAS, Aegis, Authy or Microsoft Authenticator.",
+                    "2FA ist optional. Wenn du makershelf offen im Internet bereitstellst, raten wir dringend davon ab, ohne 2FA zu arbeiten.",
+                    "2FA is optional. If you expose makershelf to the internet, we strongly advise against running it without 2FA.",
                   )}
                 </p>
-                <details>
-                  <summary style={{ cursor: "pointer", fontSize: "13px", fontWeight: 600, color: "var(--primary)" }}>
-                    {text(settings.language, "Manueller Schlüssel", "Manual key")}
-                  </summary>
-                  <p style={{ marginTop: "6px", fontSize: "11px", wordBreak: "break-all", color: "var(--text-muted)", lineHeight: 1.5 }}>
-                    {bootstrapResult.otpauthUrl}
-                  </p>
-                </details>
               </div>
+              <p style={{ fontSize: "13.5px", color: "var(--text-muted)", lineHeight: 1.6 }}>
+                {text(
+                  settings.language,
+                  "Aktiviert wird 2FA erst, wenn du im Benutzerprofil einen Authenticator-Code erfolgreich getestet hast. Vorher bleibt dein Login normal nutzbar.",
+                  "2FA is only enabled after you successfully verify an authenticator code in your user profile. Until then your login remains usable.",
+                )}
+              </p>
             </div>
-          </div>
-
-          <div className="panel" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
-            <p style={{ fontWeight: 600, fontSize: "14px", marginBottom: "12px", color: "var(--text-main)" }}>
-              {text(settings.language, "Backup-Codes", "Backup codes")}
-            </p>
-            <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px", lineHeight: 1.5 }}>
-              {text(
-                settings.language,
-                "Bewahre diese Codes sicher auf — sie sind die einzige Möglichkeit, das Konto ohne 2FA zu entsperren.",
-                "Keep these codes safe — they are the only way to unlock the account without 2FA.",
-              )}
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginBottom: "14px" }}>
-              {bootstrapResult.backupCodes.map((code) => (
-                <code key={code} style={{ display: "block", background: "var(--panel-muted)", padding: "7px 10px", borderRadius: "6px", fontSize: "12.5px", fontFamily: "monospace", letterSpacing: "0.05em" }}>
-                  {code}
-                </code>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => downloadBackupCodesFile(bootstrapResult.backupCodes, adminEmail || workspaceName)}
-              className="btn btn-secondary btn-sm"
-            >
-              {text(settings.language, "Als Textdatei laden", "Download as text file")}
-            </button>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
@@ -247,7 +163,7 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
               {text(settings.language, "Login: ", "Login: ")}{adminEmail}
             </p>
             <Link href="/login" className="btn btn-primary">
-              {text(settings.language, "Zum Login →", "Go to login →")}
+              {text(settings.language, "Jetzt anmelden →", "Sign in now →")}
             </Link>
           </div>
         </div>
@@ -310,8 +226,8 @@ export function SetupWizard({ initialServerStatus }: SetupWizardProps) {
           <p style={{ color: "var(--text-muted)", fontSize: "14px", lineHeight: 1.6 }}>
             {text(
               settings.language,
-              "Workspace-Name und ersten Administrator anlegen. Danach wird automatisch 2FA für den Admin eingerichtet.",
-              "Create the workspace name and first administrator. 2FA for the admin will be set up automatically afterwards.",
+              "Workspace-Name und ersten Administrator anlegen. 2FA kannst du anschließend optional im Benutzerprofil aktivieren.",
+              "Create the workspace name and first administrator. You can enable 2FA optionally in the user profile afterwards.",
             )}
           </p>
         </div>
