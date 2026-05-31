@@ -42,7 +42,7 @@ export async function GET(
       : await fetch(snapshotUrl, { signal: AbortSignal.timeout(8000) });
 
     if (!resp.ok) {
-      return new Response("Camera unavailable", { status: 503 });
+      return new Response(`Camera unavailable (printer returned HTTP ${resp.status})`, { status: 503 });
     }
 
     const image = await resp.arrayBuffer();
