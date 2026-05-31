@@ -97,6 +97,14 @@ type FilamentSpool = {
 
 type ActiveDetail = "status" | "maintenance" | "filament";
 
+type FarmStats = {
+  totalGrams: number;
+  totalEntries: number;
+  perPrinter: { id: string; name: string; model: string | null; totalGrams: number; entries: number }[];
+  perMaterial: { material: string; totalGrams: number; entries: number }[];
+  monthly: { month: string; totalGrams: number }[];
+};
+
 type DiscoveredPrinter = {
   name: string;
   host: string;
@@ -377,6 +385,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
   const [location, setLocation] = useState(printer?.location ?? "");
   const [groupId, setGroupId] = useState(printer?.groupId ?? "");
   const [isDummy, setIsDummy] = useState(printer?.isDummy ?? false);
+  const [active, setActive] = useState(printer?.active ?? true);
   const [apiType, setApiType] = useState<ApiType>(printer?.apiType ?? "prusa-link");
   const [apiUrl, setApiUrl] = useState(printer?.apiUrl ?? "");
   const [apiKey, setApiKey] = useState(printer?.apiKey ?? "");
@@ -393,7 +402,7 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
     const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const body = {
       name: name.trim(), model: model.trim() || null, location: location.trim() || null,
-      groupId: groupId || null, isDummy, apiType, apiUrl: isDummy ? "" : apiUrl.trim(),
+      groupId: groupId || null, isDummy, active, apiType, apiUrl: isDummy ? "" : apiUrl.trim(),
       apiKey: apiKey.trim() || null, webcamUrl: webcamUrl.trim() || null,
       tags, notes: notes.trim(),
     };
@@ -452,6 +461,19 @@ function PrinterDrawer({ lang, printer, groups, onClose, onSaved }: {
             </p>
             <p style={{ fontSize: "11.5px", color: "var(--text-muted)", margin: "2px 0 0" }}>
               {text(lang, "Kein API-Zugriff — nur für Wartungsplanung und Verlauf", "No API access — for maintenance tracking only")}
+            </p>
+          </div>
+        </label>
+
+        {/* Active toggle */}
+        <label style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", background: !active ? "color-mix(in srgb, var(--danger) 8%, var(--panel-muted))" : "var(--panel-muted)", borderRadius: "8px", cursor: "pointer", border: `1px solid ${!active ? "color-mix(in srgb, var(--danger) 30%, transparent)" : "transparent"}` }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-main)", margin: 0 }}>
+              {text(lang, "Aktiv (Status-Polling)", "Active (status polling)")}
+            </p>
+            <p style={{ fontSize: "11.5px", color: "var(--text-muted)", margin: "2px 0 0" }}>
+              {text(lang, "Deaktiviert = kein automatischer Status-Abruf", "Unchecked = no automatic status polling")}
             </p>
           </div>
         </label>
@@ -827,7 +849,7 @@ function PlanModal({ lang, plan, printerId, onClose, onSaved }: {
 
 type WorkspacePlanEntry = MaintenancePlan & { printer: { id: string; name: string; model: string | null; isDummy: boolean }; daysUntilDue: number | null };
 
-function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRefresh, onPlansChanged, workspacePlans }: {
+function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRefresh, onPlansChanged, onFilamentChanged, workspacePlans }: {
   lang: Language;
   printer: Printer;
   status: PrinterStatus | null;
@@ -835,6 +857,7 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
   onEdit: () => void;
   onStatusRefresh: () => void;
   onPlansChanged: () => void;
+  onFilamentChanged: () => void;
   workspacePlans: WorkspacePlanEntry[];
 }) {
   const [activeTab, setActiveTab] = useState<ActiveDetail>("status");
@@ -962,12 +985,14 @@ function PrinterDetailPanel({ lang, printer, status, onClose, onEdit, onStatusRe
     });
     setGrams(""); setJobName(""); setFilNotes(""); setSpoolId("");
     await fetchFilamentLogs();
+    onFilamentChanged();
     setSavingFil(false);
   }
 
   async function deleteFilamentLog(logId: string) {
     await fetch(`/api/printer-farm/printers/${printer.id}/filament-log?logId=${logId}`, { method: "DELETE" });
     setFilamentLogs((prev) => prev.filter((l) => l.id !== logId));
+    onFilamentChanged();
   }
 
   async function scanNfc() {
@@ -1436,6 +1461,7 @@ export function PrinterFarmPageClient() {
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [workspacePlans, setWorkspacePlans] = useState<WorkspacePlanEntry[]>([]);
+  const [farmStats, setFarmStats] = useState<FarmStats | null>(null);
   const [dismissedOverdueBanner, setDismissedOverdueBanner] = useState(false);
 
   const inFlight = useRef<Set<string>>(new Set());
@@ -1463,6 +1489,11 @@ export function PrinterFarmPageClient() {
     }
   }, []);
 
+  const fetchStats = useCallback(async () => {
+    const res = await fetch("/api/printer-farm/stats");
+    if (res.ok) setFarmStats(await res.json() as FarmStats);
+  }, []);
+
   const pollStatus = useCallback(async (printerList: Printer[]) => {
     await Promise.all(printerList.filter((p) => p.active && !p.isDummy).map(async (p) => {
       if (inFlight.current.has(p.id)) return;
@@ -1480,7 +1511,7 @@ export function PrinterFarmPageClient() {
     }));
   }, []);
 
-  useEffect(() => { void fetchAll(); void fetchWorkspacePlans(); }, [fetchAll, fetchWorkspacePlans]);
+  useEffect(() => { void fetchAll(); void fetchWorkspacePlans(); void fetchStats(); }, [fetchAll, fetchWorkspacePlans, fetchStats]);
 
   useEffect(() => {
     if (printers.length === 0) return;
@@ -1578,6 +1609,7 @@ export function PrinterFarmPageClient() {
           <p className="page-subtitle">
             {printers.length} {text(lang, "Drucker", "printers")}
             {printingCount > 0 && ` · ${printingCount} ${text(lang, "drucken gerade", "printing")}`}
+            {farmStats && farmStats.totalGrams > 0 && ` · ${(farmStats.totalGrams / 1000).toFixed(2)} kg ${text(lang, "Filament gesamt", "filament total")}`}
           </p>
         </div>
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -1598,6 +1630,60 @@ export function PrinterFarmPageClient() {
           </button>
         </div>
       </div>
+
+      {/* Filament stats strip */}
+      {farmStats && farmStats.totalEntries > 0 && (
+        <div className="panel" style={{ padding: "14px 18px", marginBottom: "20px", display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "flex-start" }}>
+          {/* Totals */}
+          <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+            <div>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>🧵 {text(lang, "Filament gesamt", "Total filament")}</p>
+              <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalGrams >= 1000 ? `${(farmStats.totalGrams / 1000).toFixed(2)} kg` : `${Math.round(farmStats.totalGrams)} g`}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>📋 {text(lang, "Einträge", "Log entries")}</p>
+              <p style={{ fontSize: "18px", fontWeight: 700 }}>{farmStats.totalEntries}</p>
+            </div>
+          </div>
+
+          {/* Per-printer top-3 */}
+          {farmStats.perPrinter.length > 0 && (
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>🖨️ {text(lang, "Verbrauch je Drucker", "Usage per printer")}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                {farmStats.perPrinter.slice(0, 4).map((p) => {
+                  const pct = farmStats.totalGrams > 0 ? (p.totalGrams / farmStats.totalGrams) * 100 : 0;
+                  return (
+                    <div key={p.id}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                        <span style={{ fontSize: "11.5px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>{p.name}</span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{p.totalGrams >= 1000 ? `${(p.totalGrams / 1000).toFixed(2)} kg` : `${Math.round(p.totalGrams)} g`}</span>
+                      </div>
+                      <div style={{ height: "4px", borderRadius: "2px", background: "var(--border)" }}>
+                        <div style={{ height: "100%", borderRadius: "2px", background: "var(--primary)", width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Per-material top-5 */}
+          {farmStats.perMaterial.length > 0 && (
+            <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px" }}>🎨 {text(lang, "Materialien", "Materials")}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                {farmStats.perMaterial.slice(0, 6).map((m) => (
+                  <span key={m.material} style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "var(--panel-muted)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {m.material} <strong style={{ color: "var(--text-main)" }}>{m.totalGrams >= 1000 ? `${(m.totalGrams / 1000).toFixed(1)} kg` : `${Math.round(m.totalGrams)} g`}</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Group filter + management */}
       {groups.length > 0 && (
@@ -1671,6 +1757,7 @@ export function PrinterFarmPageClient() {
           onEdit={() => { setEditingPrinter(detailPrinter); setDetailPrinter(null); setDrawerOpen(true); }}
           onStatusRefresh={() => void pollStatus([detailPrinter])}
           onPlansChanged={() => void fetchWorkspacePlans()}
+          onFilamentChanged={() => void fetchStats()}
           workspacePlans={workspacePlans}
         />
       )}
